@@ -69,12 +69,23 @@ let nivelDosGuide = null;
 let nivelDosTourAccepted = false;
 let nivelDosTourFinished = false;
 let levelTwoProgress = 0;
-let levelTwoHealth = 5;
+let levelTwoHealth = 3;
 let levelTwoCompleted = false;
 let corteBg, pasilloCorteImg, salaJuecesImg;
 let gavelImg; // mazo
+let gavelSprite = null; // sprite del mazo en la sala
+let juezSprites = []; // sprites de los jueces
 let questionIndex = 0;
 let judicialQuestions = [];
+let mazoGolpeado = false;
+// Breakout game variables
+let breakoutBall = null;
+let breakoutPaddle = null; // Será un libro
+let breakoutBlocks = [];
+let breakoutQuestionBlocks = []; // Indices of blocks that trigger questions
+let breakoutQuestionsAnswered = 0;
+let breakoutGamePaused = false;
+let libroImg; // imagen del libro (placeholder por ahora)
 // --- Level 3 (Ejecutivo) runtime state ---
 let nivelTresPhase = 0; // 0=not started, 1=outside, 2=corridor, 3=despacho, 4=pong1, 5=pong2, 6=pong3
 let nivelTresDialog = [];
@@ -683,6 +694,12 @@ function update(){ // corre en loop, AQUÍ VA LA LÓGICA DEL JUEGO
 		fill("black");
 		textAlign(CENTER);
 		uiText(30);
+		
+		// Don't allow Zyro movement while dialogue is active
+		if (!dialogueActive) {
+			controlesZyroBase();
+		}
+		
 		dudaotroAlien = true;
 
 		if (dudaotroAlien == true && !levelOneCompleted){
@@ -690,10 +707,10 @@ function update(){ // corre en loop, AQUÍ VA LA LÓGICA DEL JUEGO
 			fill("black");
 			textAlign(CENTER);
 			textWeight(700);
-			textImage("❓", otroAlien.pos.x, otroAlien.pos.y - 110);
+			text("❓", otroAlien.pos.x, otroAlien.pos.y - 110);
 		}
 
-		// Start a dialogue when Zyro gets close to otroAlien (activates when Zyro is still 250px away)
+		// Start a dialogue when Zyro gets close to otroAlien
 		// First time: levelBoxes.length === 0 (before first dialog)
 		// After level: showReturnDialog === true
 		if (!dialogueActive && (levelBoxes.length === 0 || showReturnDialog)) {
@@ -722,11 +739,6 @@ function update(){ // corre en loop, AQUÍ VA LA LÓGICA DEL JUEGO
 		// If level boxes exist (after dialogue), draw them and handle interactions
 		if (levelBoxes.length > 0) {
 			displayLevelBoxes();
-		}
-
-		// Allow Zyro movement when no dialogue is active
-		if (!dialogueActive) {
-			controlesZyroBase();
 		}
 
 		// update prevEnterDown at end of frame so edge detection works next frame
@@ -836,51 +848,52 @@ function nivelUnoLoop(){
 		if (sanLazaro && sanLazaro.width > 1) image(sanLazaro, 0, 0, width, height);
 		else background(fondoJardin);
 		// draw Zyro and guide sprites
-			if (zyro) zyro.draw();
-			if (nivelUnoGuide) nivelUnoGuide.draw();
-	// allow movement to approach guide only if no dialog active or awaiting
-	if (nivelUnoDialogActive) {
-		drawLevelDialog(nivelUnoDialog[nivelUnoDialogIndex]);
-		// Show prompt to continue
-		push(); uiText(14); fill('white'); textAlign(CENTER); text('Presiona ENTER para continuar', width/2, height - 40); pop();
+		if (zyro) zyro.draw();
+		if (nivelUnoGuide) nivelUnoGuide.draw();
 		
-		// Use edge detection: only advance on NEW press, not while held
-		let enterDown = keyIsDown(ENTER);
-		let enterPressed = enterDown && !prevEnterDown;
-		if (enterPressed) {
-			nivelUnoDialogIndex++;
-			if (nivelUnoDialogIndex >= nivelUnoDialog.length) {
-				// dialog finished: remove guide completely
-				nivelUnoDialogActive = false;
-				if (nivelUnoGuide && nivelUnoGuide.remove) {
-					nivelUnoGuide.remove();
+		// allow movement to approach guide only if no dialog active or awaiting
+		if (nivelUnoDialogActive) {
+			drawLevelDialog(nivelUnoDialog[nivelUnoDialogIndex]);
+			// Show prompt to continue
+			push(); uiText(14); fill('white'); textAlign(CENTER); text('Presiona ENTER para continuar', width/2, height - 40); pop();
+			
+			// Use edge detection: only advance on NEW press, not while held
+			let enterDown = keyIsDown(ENTER);
+			let enterPressed = enterDown && !prevEnterDown;
+			if (enterPressed) {
+				nivelUnoDialogIndex++;
+				if (nivelUnoDialogIndex >= nivelUnoDialog.length) {
+					// dialog finished: remove guide completely
+					nivelUnoDialogActive = false;
+					if (nivelUnoGuide && nivelUnoGuide.remove) {
+						nivelUnoGuide.remove();
+					}
+					nivelUnoGuide = null;
+					// mark that the tour/outside dialog is finished so the player can enter
+					nivelUnoTourFinished = true;
 				}
-				nivelUnoGuide = null;
-				// mark that the tour/outside dialog is finished so the player can enter
-				nivelUnoTourFinished = true;
+			}
+			prevEnterDown = enterDown;
+			// Only return if dialog is still active after processing
+			if (nivelUnoDialogActive) return;
+		}
+
+		// allow Zyro movement while approaching the guide
+		controlesZyroBase();
+		
+		// Trigger dialogue when Zyro gets close or collides with the guide
+		if (!nivelUnoDialogActive && nivelUnoGuide) {
+			let dx = abs(zyro.pos.x - nivelUnoGuide.pos.x);
+			if (dx < 80) {
+				nivelUnoDialogActive = true;
+				// change guide image when dialogue starts
+				if (tourguideImg) nivelUnoGuide.image = tourguideImg;
+				nivelUnoDialogIndex = 0;
 			}
 		}
-		prevEnterDown = enterDown;
-		// Only return if dialog is still active after processing
-		if (nivelUnoDialogActive) return;
-	}
-
-	// allow Zyro movement while approaching the guide
-	controlesZyroBase();
-	
-	// Trigger dialogue when Zyro gets close or collides with the guide
-	if (!nivelUnoDialogActive && nivelUnoGuide) {
-		let dx = abs(zyro.pos.x - nivelUnoGuide.pos.x);
-		if (dx < 80) {
-			nivelUnoDialogActive = true;
-			// change guide image when dialogue starts
-			if (tourguideImg) nivelUnoGuide.image = tourguideImg;
-			nivelUnoDialogIndex = 0;
-		}
-	}
-	
-	// draw hint to go to center (only allow entering after the tour dialog finished)
-	if (zyro.pos.x > width/2 - 50 && zyro.pos.x < width/2 + 50) {
+		
+		// draw hint to go to center (only allow entering after the tour dialog finished)
+		if (zyro.pos.x > width/2 - 50 && zyro.pos.x < width/2 + 50) {
 			push(); uiText(20); fill('white'); textAlign(CENTER);
 			if (nivelUnoTourFinished) text('Entrar? Presiona ENTER', width/2, 80);
 			else text('Habla con el guía antes de entrar', width/2, 80);
@@ -936,86 +949,98 @@ function nivelUnoLoop(){
 			nivelUnoDialogActive = true;
 		}
 
-	if (nivelUnoDialogActive) {
-		drawLevelDialog(nivelUnoDialog[nivelUnoDialogIndex]);
-		// Show prompt to continue
-		push(); uiText(14); fill('white'); textAlign(CENTER); text('Presiona ENTER para continuar', width/2, height - 40); pop();
-		
-		// Use edge detection: only advance on NEW press
-		let enterDown = keyIsDown(ENTER);
-		let enterPressed = enterDown && !prevEnterDown;
-		if (enterPressed) {
-			nivelUnoDialogIndex++;
-			if (nivelUnoDialogIndex >= nivelUnoDialog.length) {
+		if (nivelUnoDialogActive) {
+			drawLevelDialog(nivelUnoDialog[nivelUnoDialogIndex]);
+			// Show prompt to continue
+			push(); uiText(14); fill('white'); textAlign(CENTER); text('Presiona ENTER para continuar', width/2, height - 40); pop();
+			
+			// Use edge detection: only advance on NEW press
+			let enterDown = keyIsDown(ENTER);
+			let enterPressed = enterDown && !prevEnterDown;
+			if (enterPressed) {
+				nivelUnoDialogIndex++;
+				if (nivelUnoDialogIndex >= nivelUnoDialog.length) {
+					nivelUnoDialogActive = false;
+					// Remove guide after dialog ends
+					if (nivelUnoGuide && nivelUnoGuide.remove) {
+						nivelUnoGuide.remove();
+					}
+					nivelUnoGuide = null;
+					// Go to camera phase (NOT minigame yet)
+					startCamera();
+				}
+			}
+			prevEnterDown = enterDown;
+			if (nivelUnoDialogActive) return;
+		}
+	}
+	else if (nivelUnoPhase === 3) {
+		// Camera screen: set background to camara and position zyro at left
+		if (camaraImg) image(camaraImg, 0, 0, width, height);
+		else background(80);
+		// Draw zyro
+		if (zyro) zyro.draw();
+
+		// Primer diálogo: pensamiento inicial de Zyro
+		if (nivelUnoDialogActive && nivelUnoDialogIndex === 0 && nivelUnoDialog.length === 1) {
+			drawLevelDialog(nivelUnoDialog[nivelUnoDialogIndex]);
+			push(); uiText(14); fill('white'); textAlign(CENTER); 
+			text('Presiona ENTER para continuar', width/2, height - 40); pop();
+			
+			let enterDown = keyIsDown(ENTER);
+			let enterPressed = enterDown && !prevEnterDown;
+			if (enterPressed) {
+				// Terminar diálogo inicial y dar control de movimiento
 				nivelUnoDialogActive = false;
-				// guide disappears, allow entering camera
-				nivelUnoGuide.pos = { x: -5000, y: -5000 };
+				nivelUnoDialogIndex = 0;
+				
+				// Preparar diálogo del senador (pero NO activarlo aún)
+				nivelUnoDialog = [
+					{ who: 'senator', text: '¡HEY TÚ! ¿QUIÉN OSA INTERRUMPIR A ESTA CÁMARA?' },
+					{ who: 'zyro', text: 'Hola, eh, perdón, solo estaba intentando ver qué...' },
+					{ who: 'senator', text: '¿Cómo te atreves? ¡Estamos trabajando y vienes de metiche!' },
+					{ who: 'zyro', text: 'Bueno ya me vo...' },
+					{ who: 'senator', text: '¡Ni lo creas! ¡Pagarás por haber entrado sin anunciarte!' },
+					{ who: 'senator', text: 'Te lanzaremos documentos y sillas.' },
+					{ who: 'senator', text: 'Debes recoger SOLO los manuscritos y responder las preguntas.' },
+					{ who: 'senator', text: 'Esquiva las sillas o perderás vida.' },
+					{ who: 'senator', text: '¡Responde 10 preguntas correctamente para ganar!' }
+				];
+			}
+			prevEnterDown = enterDown;
+			return; // No permitir movimiento durante este diálogo
+		}
+
+		// Dar control de movimiento después del diálogo inicial
+		if (!nivelUnoDialogActive) {
+			controlesZyroBase();
+			
+			// Trigger diálogo del senador cuando Zyro llega al centro
+			if (zyro.pos.x > width/2 - 20 && nivelUnoDialog.length > 1) {
+				nivelUnoDialogActive = true;
+				nivelUnoDialogIndex = 0;
 			}
 		}
-		prevEnterDown = enterDown;
-		if (nivelUnoDialogActive) return;
-	}
-	
-	// prompt to enter
-	push(); uiText(20); fill('white'); textAlign(CENTER); text('Presiona ENTER para entrar al hemiciclo', width/2, 80); pop();
-	if (enterBuffer > 0) {
-		enterBuffer = 0;
-		startCamera();
-	}
-}
-else if (nivelUnoPhase === 3) {
-	// Camera screen: set background to camara and position zyro at left
-	if (camaraImg) image(camaraImg, 0, 0, width, height);
-	else background(80);
-	// Draw zyro (position set only once in startCamera)
-	if (zyro) zyro.draw();
 
-	// Voiceover dialogues when Zyro moves to middle
-	if (!nivelUnoDialogActive && nivelUnoDialogIndex === 0) {
-		nivelUnoDialog = [
-			{ who: 'senator', text: '¡HEY TÚ! ¿QUIÉN OSA INTERRUMPIR A ESTA CÁMARA?' },
-			{ who: 'zyro', text: 'Hola, eh, perdón, solo estaba intentando ver qué...' },
-			{ who: 'senator', text: '¿Cómo te atreves? ¡Estamos trabajando y vienes de metiche!' },
-			{ who: 'zyro', text: 'Bueno ya me vo...' },
-			{ who: 'senator', text: '¡Ni lo creas! ¡Pagarás por haber entrado sin anunciarte!' },
-			{ who: 'senator', text: 'Te lanzaremos documentos y sillas.' },
-			{ who: 'senator', text: 'Debes recoger SOLO los manuscritos y responder las preguntas.' },
-			{ who: 'senator', text: 'Esquiva las sillas o perderás vida.' },
-			{ who: 'senator', text: '¡Responde 10 preguntas correctamente para ganar!' }
-		];
-		nivelUnoDialogIndex = 0;
-		nivelUnoDialogActive = false; // will trigger when Zyro reaches middle
-	}
-
-	// Allow movement if dialog not active
-	if (!nivelUnoDialogActive) {
-		controlesZyroBase();
-		// Trigger dialogue when Zyro reaches middle
-		if (zyro.pos.x > width/2 - 20) {
-			nivelUnoDialogActive = true;
-		}
-	}
-
-	if (nivelUnoDialogActive) {
-		drawLevelDialog(nivelUnoDialog[nivelUnoDialogIndex]);
-		// Show prompt to continue
-		push(); uiText(14); fill('white'); textAlign(CENTER); text('Presiona ENTER para continuar', width/2, height - 40); pop();
-		
-		// Use edge detection: only advance on NEW press
-		let enterDown = keyIsDown(ENTER);
-		let enterPressed = enterDown && !prevEnterDown;
-		if (enterPressed) {
-			nivelUnoDialogIndex++;
-			if (nivelUnoDialogIndex >= nivelUnoDialog.length) {
-				// start minigame
-				nivelUnoDialogActive = false;
-				startMinigame();
+		// Mostrar diálogo del senador (ya con control activado)
+		if (nivelUnoDialogActive && nivelUnoDialog.length > 1) {
+			drawLevelDialog(nivelUnoDialog[nivelUnoDialogIndex]);
+			push(); uiText(14); fill('white'); textAlign(CENTER); 
+			text('Presiona ENTER para continuar', width/2, height - 40); pop();
+			
+			let enterDown = keyIsDown(ENTER);
+			let enterPressed = enterDown && !prevEnterDown;
+			if (enterPressed) {
+				nivelUnoDialogIndex++;
+				if (nivelUnoDialogIndex >= nivelUnoDialog.length) {
+					// start minigame
+					nivelUnoDialogActive = false;
+					startMinigame();
+				}
 			}
+			prevEnterDown = enterDown;
 		}
-		prevEnterDown = enterDown;
-		if (nivelUnoDialogActive) return;
 	}
-}
 	else if (nivelUnoPhase === 4) {
 		// run minigame loop
 		runMinigame();
@@ -1039,6 +1064,7 @@ function drawLevelDialog(entry) {
 		'zyro': '#4CAF50',
 		'guia': '#FF9800',
 		'senator': '#F44336',
+		'juez': '#8B4513',
 		'otro': '#9E9E9E'
 	};
 	let c = colorMap[speaker] || '#FFFFFF';
@@ -1054,7 +1080,7 @@ function drawLevelDialog(entry) {
 	uiText(16);
 	textAlign(LEFT, TOP);
 	fill(c);
-	let whoLabel = speaker === 'zyro' ? 'Zyro' : (speaker === 'guia' ? 'Guía' : (speaker === 'senator' ? 'Senador' : speaker));
+	let whoLabel = speaker === 'zyro' ? 'Zyro' : (speaker === 'guia' ? 'Guía' : (speaker === 'senator' ? 'Senador' : (speaker === 'juez' ? 'Juez' : speaker)));
 	text(whoLabel + ':', width/2 - width*0.9/2 + 20, 60);
 
 	fill(255);
@@ -1082,7 +1108,14 @@ function startCorridor(){
 function startCamera(){
 	nivelUnoPhase = 3;
 	nivelUnoDialogIndex = 0;
-	nivelUnoDialogActive = false;
+	nivelUnoDialogActive = true; // Activar diálogo inicial de Zyro
+	// Position Zyro at left side
+	zyro.pos = { x: 80, y: height - 140 };
+	
+	// Diálogo inicial de Zyro al entrar (SOLO una línea)
+	nivelUnoDialog = [
+		{ who: 'zyro', text: 'Hmm.. espero que nadie vea que estoy aquí...' }
+	];
 }
 
 function startMinigame(){
@@ -1091,8 +1124,8 @@ function startMinigame(){
 	levelOneProgress = 0;
 	levelOneHealth = 5;
 	minigameFalling = [];
-	minigameSpawnTimer = 0; // Resetear el timer
-	questionsAsked = []; // Resetear preguntas usadas
+	minigameSpawnTimer = 0;
+	questionsAsked = [];
 	questionsPool = [
 		{q: '¿Qué es el Poder Legislativo?', opts: ['El poder encargado de aplicar las leyes','El poder encargado de interpretar las leyes','El poder encargado de crear y modificar leyes','El poder que dirige a las Fuerzas Armadas'], correct:2},
 		{q: '¿Dónde se reúnen?', opts: ['En el Palacio Nacional','En el Congreso de la Unión','En la Suprema Corte','En el Senado Internacional'], correct:1},
@@ -1126,17 +1159,14 @@ function runMinigame(){
 	zyro.pos.y = height - 70;
 	zyro.draw();
 
-	// spawn falling objects - MUY REDUCIDO (1 a la vez)
+	// spawn falling objects
 	if (!awaitingQuestion) {
 		minigameSpawnTimer++;
-		// Spawn más frecuente: 120 frames = 2 segundos (antes 240)
 		if (minigameSpawnTimer > 120) {
 			minigameSpawnTimer = 0;
-			// 66% sillas, 33% manuscritos - ratio 2:1 más sillas
 			let isChair = random() < 0.66;
 			let s = new Sprite(random(60, width-60), -40, 30, 50, 'k');
 			s.collider = 'kinematic';
-			// Dar velocidad inicial mucho más rápida para caída rápida
 			s.vel = {x:0, y: isChair ? 8 : 7};
 			s.bounciness = 0;
 			s.rotationLock = true;
@@ -1157,45 +1187,35 @@ function runMinigame(){
 			continue;
 		}
 		
-		// MOVER más lento durante preguntas
 		if (awaitingQuestion && s && !s.removed) {
-			// Slow down during questions (half speed)
 			s.vel.y = s.imgType === 'chair' ? 4 : 3.5;
 		} else if (!awaitingQuestion && s && !s.removed && s.vel.y < 8) {
-			// Resume normal speed after question
 			s.vel.y = s.imgType === 'chair' ? 8 : 7;
 		}
 		
-		// Dibujar
 		if (s && !s.removed) {
 			s.draw();
 		}
 		
-		// Eliminar si está fuera de la pantalla
 		if (s && !s.removed && s.pos.y > height + 100) {
 			s.remove();
 			minigameFalling.splice(i, 1);
 			continue;
 		}
 
-		// Detección de colisión - ARREGLADA
+		// Detección de colisión
 		if (!awaitingQuestion && !s.hasCollided && s && !s.removed) {
 			let dx = abs(zyro.pos.x - s.pos.x);
 			let dy = abs(zyro.pos.y - s.pos.y);
 			
-			// Área de colisión MUCHO MÁS GRANDE para manuscritos (más fácil agarrar)
 			let collisionRadius = (s.imgType === 'manuscript') ? 60 : 25;
 			
 			if (dx < collisionRadius && dy < collisionRadius) {
 				s.hasCollided = true;
-				console.log('Colisión detectada:', s.imgType);
 				
 				if (s.imgType === 'chair') {
-					// SILLA: quita vida
 					levelOneHealth -= 1;
-					console.log('¡Golpeado por silla! Vida:', levelOneHealth);
 					
-					// Eliminar la silla inmediatamente
 					if (s && !s.removed) {
 						s.remove();
 						minigameFalling.splice(i, 1);
@@ -1206,16 +1226,12 @@ function runMinigame(){
 							if (obj && !obj.removed) obj.remove();
 						}
 						minigameFalling = [];
-						// Hide Zyro and play crash sound
 						if (zyro) zyro.pos = {x: -5000, y: -5000};
 						if (crasheo) crasheo.play();
 						nivelUnoPhase = 99;
 					}
 				} else {
-					// MANUSCRITO: pregunta
-					console.log('¡Manuscrito agarrado!');
-					
-					// Permitir repetir preguntas si ya se usaron todas
+					// MANUSCRITO
 					let availableQuestions = [];
 					for (let idx = 0; idx < questionsPool.length; idx++) {
 						if (!questionsAsked.includes(idx)) {
@@ -1226,7 +1242,6 @@ function runMinigame(){
 						}
 					}
 					
-					// Si ya usó todas, resetear y permitir repetir
 					if (availableQuestions.length === 0) {
 						questionsAsked = [];
 						for (let idx = 0; idx < questionsPool.length; idx++) {
@@ -1243,9 +1258,8 @@ function runMinigame(){
 						currentQuestion = selected.question;
 						questionsAsked.push(selected.originalIndex);
 						awaitingQuestion = true;
-						console.log('Pregunta activada');
 					}
-					// Eliminar manuscrito
+					
 					if (s && !s.removed) {
 						s.remove();
 						minigameFalling.splice(i, 1);
@@ -1253,24 +1267,17 @@ function runMinigame(){
 				}
 			}
 		}
-		
-		// Eliminar fuera de pantalla
-		if (!awaitingQuestion && s && !s.removed && s.pos.y > height + 50) {
-			s.remove();
-			minigameFalling.splice(i, 1);
-		}
 	}
 
-	// Draw HUD: health and progress
+	// Draw HUD
 	push();
-	// health
 	fill(200);
 	rect(120, 30, 220, 20, 6);
 	fill('#F44336');
 	let hw = map(levelOneHealth, 0, 5, 0, 220);
 	rect(120 - 110 + hw/2, 30, hw, 20, 6);
 	fill('white'); uiText(14); textAlign(LEFT); text('Vida: ' + levelOneHealth, 20, 26);
-	// progress
+	
 	fill(200);
 	rect(width - 140, 30, 220, 20, 6);
 	fill('#4CAF50');
@@ -1279,23 +1286,18 @@ function runMinigame(){
 	fill('white'); uiText(14); textAlign(RIGHT); text('Progreso: ' + levelOneProgress + '/10', width - 20, 26);
 	pop();
 
-	// If awaiting a question, pause spawning and show question overlay
 	if (awaitingQuestion && currentQuestion) {
 		drawQuestionOverlay(currentQuestion);
 	}
 
-	// win condition
 	if (levelOneProgress >= 10) {
-		// Limpiar objetos
 		for (let obj of minigameFalling) {
 			obj.remove();
 		}
 		minigameFalling = [];
 		
-		// Hide Zyro when winning
 		if (zyro) zyro.pos = {x: -5000, y: -5000};
 		
-		// Reproducir aplausos
 		if (aplausosSound && !aplausosSound.isPlaying()) {
 			aplausosSound.play();
 		}
@@ -1311,7 +1313,6 @@ function drawQuestionOverlay(q) {
 	rect(width/2, height/2, width*0.8, height*0.6, 10);
 	fill('white'); uiText(20); textAlign(LEFT);
 	text(q.q, width/2 - width*0.8/2 + 20, height/2 - height*0.6/2 + 20, width*0.8 - 40, 120);
-	// list options and number them 1-4
 	uiText(18);
 	for (let i=0;i<q.opts.length;i++){
 		text((i+1) + ") " + q.opts[i], width/2 - width*0.8/2 + 40, height/2 - height*0.6/2 + 120 + i*36);
@@ -1321,36 +1322,32 @@ function drawQuestionOverlay(q) {
 }
 
 function drawGameOverScreen() {
-    background(0);
-    // Draw muerto Zyro in center (smaller)
-    if (zyroMuertoImg) {
-        imageMode(CENTER);
-        image(zyroMuertoImg, width/2, height/2 - 60, 150, 150);
-        imageMode(CORNER);
-    }
+	background(0);
+	if (zyroMuertoImg) {
+		imageMode(CENTER);
+		image(zyroMuertoImg, width/2, height/2 - 60, 150, 150);
+		imageMode(CORNER);
+	}
 	fill('#00BCD4');
 	textAlign(CENTER);
 	uiText(48);
 	text('¡Oh no, la jurisprudencia te venció!', width/2, height/2 + 120);
-    // Cyan retry button
-    fill('#00BCD4');
-    rect(width/2, height - 100, 260, 60, 16);
+	fill('#00BCD4');
+	rect(width/2, height - 100, 260, 60, 16);
 	fill('white');
 	uiText(28);
 	text('Reintentar', width/2, height - 92);
-    // Mouse click detection
-    if (mouseIsPressed && mouseY > height - 130 && mouseY < height - 70 && mouseX > width/2 - 130 && mouseX < width/2 + 130) {
-        startCamera();
-        startMinigame();
-        nivelUnoPhase = 4;
-    }
+	
+	if (mouseIsPressed && mouseY > height - 130 && mouseY < height - 70 && mouseX > width/2 - 130 && mouseX < width/2 + 130) {
+		startMinigame();
+		nivelUnoPhase = 4;
+	}
 }
+
 function drawVictoryUno() {
-	// Use nivel1pasado.png as background if available, otherwise gradient
 	if (nivel1PasadoImg) {
 		image(nivel1PasadoImg, 0, 0, width, height);
 	} else {
-		// Colorful gradient background fallback
 		for (let i = 0; i < height; i++) {
 			let inter = map(i, 0, height, 0, 1);
 			let c = lerpColor(color(76, 175, 80), color(33, 150, 243), inter);
@@ -1367,7 +1364,6 @@ function drawVictoryUno() {
 	uiText(32);
 	text('Los senadores te regalan un pin de la bandera de México', width/2, height/2 - 40);
 	
-	// Draw trophy
 	if (trofeoPin) {
 		imageMode(CENTER);
 		image(trofeoPin, width/2, height/2 + 40, 80, 80);
@@ -1378,78 +1374,69 @@ function drawVictoryUno() {
 	text('Te envían en limusina de regreso', width/2, height/2 + 120);
 	text('Presiona ENTER para regresar', width/2, height - 60);
 	
-	// Usar enterBuffer para detectar ENTER
 	if (enterBuffer > 0) {
 		enterBuffer = 0;
-		// Mark level as completed
 		if (!completedLevels.includes(0)) completedLevels.push(0);
 		levelOneCompleted = true;
 		
-		// Detener aplausos si están sonando
 		if (aplausosSound && aplausosSound.isPlaying()) {
 			aplausosSound.stop();
 		}
 		
-		// Return to garden
 		returnToGarden();
 	}
 }
 
-// ==================== NIVEL DOS: PODER JUDICIAL ====================
-
+// --- Level 2 (Judicial) functions ---
 function startNivelDos() {
-	nivelDosPhase = 1; // Phase 1: outside
+	nivelDosPhase = 1;
 	levelTwoProgress = 0;
-	levelTwoHealth = 5;
-	questionIndex = 0;
-	awaitingQuestion = false;
+	levelTwoHealth = 3;
 	nivelDosDialogIndex = 0;
 	nivelDosDialogActive = false;
-	nivelDosTourAccepted = true; // Tour is now mandatory
-	nivelDosTourFinished = false; // Track if outside tour is done
+	nivelDosTourFinished = false;
+	mazoGolpeado = false;
 	
-	// Place Zyro on the left, guide on the right (facing left)
+	// Position Zyro
 	zyro.pos = { x: 30, y: height - 140 };
 	zyro.scale = 0.7;
 	
-	// Create guide facing Zyro
+	// Hide other alien
+	if (otroAlien) otroAlien.pos = { x: -5000, y: -5000 };
+	
+	// Create guide sprite usando la imagen del nivel 1
 	if (nivelDosGuide) nivelDosGuide.remove();
 	nivelDosGuide = new Sprite(width - 190, height - 150, 60, 150, 's');
-	nivelDosGuide.image = tourguideLeftImg; // Guide facing left (toward Zyro)
+	nivelDosGuide.image = tourguideLeftImg; // Empieza mirando a la izquierda
 	nivelDosGuide.scale = 0.22;
 	
-	// Hide otroAlien
-	if (otroAlien) otroAlien.pos = { x: -5000, y: -5000 };
+	// Diálogo inicial simple
+	nivelDosDialog = [
+		{ who: 'zyro', text: '¿Este es el edificio de la Suprema Corte?' },
+		{ who: 'guia', text: 'Así es. ¿Quieres un tour?' },
+		{ who: 'zyro', text: '¡Sí, por favor!' }
+	];
 }
 
 function nivelDosLoop() {
-	// Phase 1: Outside Suprema Corte
 	if (nivelDosPhase === 1) {
-		// Background: blue placeholder (will be replaced with image)
-		if (corteBg && corteBg.width > 1) image(corteBg, 0, 0, width, height);
-		else background(30, 100, 200); // Blue background
+		// FASE 1: Outside - Llegada al edificio
+		background(30, 100, 200); // Fondo azul (temporal)
 		
-		// Draw Zyro and guide
 		if (zyro) zyro.draw();
 		if (nivelDosGuide) nivelDosGuide.draw();
 		
-		// Dialog handling
 		if (nivelDosDialogActive) {
 			drawLevelDialog(nivelDosDialog[nivelDosDialogIndex]);
 			push(); uiText(14); fill('white'); textAlign(CENTER); 
-			text('Presiona ENTER para continuar', width/2, height - 40); 
-			pop();
+			text('Presiona ENTER para continuar', width/2, height - 40); pop();
 			
-			// Use edge detection for ENTER
 			let enterDown = keyIsDown(ENTER);
 			let enterPressed = enterDown && !prevEnterDown;
 			if (enterPressed) {
 				nivelDosDialogIndex++;
 				if (nivelDosDialogIndex >= nivelDosDialog.length) {
-					// Dialog finished
 					nivelDosDialogActive = false;
-					// Change guide to face forward after greeting
-					if (tourguideImg) nivelDosGuide.image = tourguideImg;
 					nivelDosTourFinished = true;
 				}
 			}
@@ -1457,32 +1444,25 @@ function nivelDosLoop() {
 			if (nivelDosDialogActive) return;
 		}
 		
-		// Allow movement when no dialog active
+		// Permitir movimiento
 		controlesZyroBase();
 		
-		// Trigger dialog when Zyro approaches guide
-		if (!nivelDosDialogActive && !nivelDosTourFinished && nivelDosGuide) {
+		// Trigger diálogo cuando Zyro se acerca al guía
+		if (!nivelDosDialogActive && nivelDosGuide && !nivelDosTourFinished) {
 			let dx = abs(zyro.pos.x - nivelDosGuide.pos.x);
 			if (dx < 80) {
 				nivelDosDialogActive = true;
+				// Cambiar a imagen mirando al frente cuando habla
+				if (tourguideImg) nivelDosGuide.image = tourguideImg;
 				nivelDosDialogIndex = 0;
-				// Initial greeting dialog
-				nivelDosDialog = [
-					{ who: 'guia', text: '¡Hola! Bienvenido.' },
-					{ who: 'zyro', text: '¿Qué es este edificio?' },
-					{ who: 'guia', text: 'Este es el edificio de la Suprema Corte de Justicia.' },
-					{ who: 'guia', text: 'Aquí se establece el Poder Judicial de la Federación.' },
-					{ who: 'zyro', text: '¿Me podrías dar un tour?' },
-					{ who: 'guia', text: '¡Claro! Te veo adentro.' }
-				];
 			}
 		}
 		
-		// Show hint to enter building (after tour dialog finished)
+		// Permitir entrar al edificio después del tour
 		if (zyro.pos.x > width/2 - 50 && zyro.pos.x < width/2 + 50) {
 			push(); uiText(20); fill('white'); textAlign(CENTER);
 			if (nivelDosTourFinished) text('Entrar? Presiona ENTER', width/2, 80);
-			else text('Habla con el guía antes de entrar', width/2, 80);
+			else text('Habla con el guía primero', width/2, 80);
 			pop();
 			if (enterBuffer > 0 && nivelDosTourFinished) {
 				enterBuffer = 0;
@@ -1491,36 +1471,18 @@ function nivelDosLoop() {
 		}
 	}
 	else if (nivelDosPhase === 2) {
-		// Corridor - green background placeholder
-		if (pasilloCorteImg && pasilloCorteImg.width > 1) image(pasilloCorteImg, 0, 0, width, height);
-		else background(40, 200, 100); // Green placeholder
+		// FASE 2: Pasillo - Información sobre la Suprema Corte
+		background(50, 120, 220); // Fondo azul más claro para pasillo
 		
-		// Position Zyro and guide
+		// Posicionar Zyro y guía
 		zyro.pos = { x: width - 250, y: height - 120 };
 		if (zyro) zyro.draw();
 		if (nivelDosGuide) nivelDosGuide.draw();
 		
-		// Initialize dialog only once
-		if (nivelDosDialogIndex === 0 && !nivelDosDialogActive) {
-			nivelDosDialog = [
-				{ who: 'guia', text: 'Este es el edificio de la Suprema Corte de Justicia, el máximo tribunal del país.' },
-				{ who: 'guia', text: 'Aquí trabajan 11 ministros que se encargan de interpretar la Constitución y resolver conflictos legales importantes.' },
-				{ who: 'zyro', text: '¿Qué tipo de casos ven?' },
-				{ who: 'guia', text: 'Ven controversias constitucionales, amparos, y deciden si las leyes respetan la Constitución.' },
-				{ who: 'guia', text: 'Los ministros son nombrados por el Presidente y aprobados por el Senado, y su cargo dura 15 años.' },
-				{ who: 'zyro', text: 'Interesante...' },
-				{ who: 'guia', text: 'La sala está vacía ahora, pero puedes echar un vistazo rápido.' }
-			];
-			nivelDosDialogIndex = 0;
-			nivelDosDialogActive = true;
-		}
-		
-		// Display dialog with edge detection for ENTER
 		if (nivelDosDialogActive) {
 			drawLevelDialog(nivelDosDialog[nivelDosDialogIndex]);
 			push(); uiText(14); fill('white'); textAlign(CENTER); 
-			text('Presiona ENTER para continuar', width/2, height - 40); 
-			pop();
+			text('Presiona ENTER para continuar', width/2, height - 40); pop();
 			
 			let enterDown = keyIsDown(ENTER);
 			let enterPressed = enterDown && !prevEnterDown;
@@ -1528,613 +1490,518 @@ function nivelDosLoop() {
 				nivelDosDialogIndex++;
 				if (nivelDosDialogIndex >= nivelDosDialog.length) {
 					nivelDosDialogActive = false;
-					// Remove guide after dialog ends
+					// Remover guía y pasar a la sala de jueces
 					if (nivelDosGuide && nivelDosGuide.remove) {
 						nivelDosGuide.remove();
 					}
 					nivelDosGuide = null;
+					startSalaJueces();
 				}
 			}
 			prevEnterDown = enterDown;
-			if (nivelDosDialogActive) return;
-		}
-		
-		// Prompt to enter sala after dialog
-		push(); uiText(20); fill('white'); textAlign(CENTER); 
-		text('Presiona ENTER para entrar a la sala', width/2, 80); 
-		pop();
-		
-		if (enterBuffer > 0) {
-			enterBuffer = 0;
-			startSalaJueces();
 		}
 	}
 	else if (nivelDosPhase === 3) {
-		// Sala de Jueces - Zyro toma el mazo
-		if (salaJuecesImg) image(salaJuecesImg, 0, 0, width, height);
-		else background(50, 140, 240);
+		// FASE 3: Sala de Jueces - Encuentro con el mazo y los jueces
+		background(60, 140, 240); // Fondo azul aún más claro
 		
-		zyro.pos = { x: width/2, y: height - 140 };
+		// Posicionar Zyro a la izquierda
+		if (!mazoGolpeado) {
+			zyro.pos.x = 80;
+			zyro.pos.y = height - 140;
+		}
 		if (zyro) zyro.draw();
 		
-		// Draw gavel on table
-		if (gavelImg) {
-			imageMode(CENTER);
-			image(gavelImg, width/2, height/2, 60, 60);
-			imageMode(CORNER);
+		// Dibujar el mazo en el centro si no ha sido golpeado
+		if (!mazoGolpeado && gavelSprite) {
+			gavelSprite.draw();
+			
+			// Mostrar hint para golpear el mazo
+			let dx = abs(zyro.pos.x - gavelSprite.pos.x);
+			if (dx < 60) {
+				push(); uiText(18); fill('white'); textAlign(CENTER);
+				text('Presiona ENTER para golpear el mazo', width/2, 60);
+				pop();
+				
+				if (enterBuffer > 0) {
+					enterBuffer = 0;
+					mazoGolpeado = true;
+					// Crear jueces
+					crearJueces();
+				}
+			}
 		}
 		
-		if (!nivelDosDialogActive && nivelDosDialogIndex === 0) {
-			nivelDosDialog = [
-				{ who: 'zyro', text: '¿Qué es esto? Un mazo...' },
-				{ who: 'zyro', text: '*lo toma y golpea la mesa*' },
-				{ who: 'zyro', text: 'Nada pasó... mejor me voy.' }
-			];
-			nivelDosDialogIndex = 0;
-			nivelDosDialogActive = true;
+		// Permitir movimiento solo antes de golpear el mazo y cuando no hay diálogo activo
+		if (!mazoGolpeado && !nivelDosDialogActive) {
+			controlesZyroBase();
 		}
 		
+		// Dibujar jueces si ya fueron creados
+		if (mazoGolpeado) {
+			for (let juez of juezSprites) {
+				if (juez && !juez.removed) juez.draw();
+			}
+		}
+		
+		// Diálogo con los jueces
 		if (nivelDosDialogActive) {
 			drawLevelDialog(nivelDosDialog[nivelDosDialogIndex]);
 			push(); uiText(14); fill('white'); textAlign(CENTER); 
-			text('Presiona ENTER para continuar', width/2, height - 40); 
-			pop();
+			text('Presiona ENTER para continuar', width/2, height - 40); pop();
 			
-			if (enterBuffer > 0) {
-				enterBuffer = 0;
+			let enterDown = keyIsDown(ENTER);
+			let enterPressed = enterDown && !prevEnterDown;
+			if (enterPressed) {
 				nivelDosDialogIndex++;
 				if (nivelDosDialogIndex >= nivelDosDialog.length) {
 					nivelDosDialogActive = false;
-					// Judges enter!
-					startMinigameDos();
+					// Iniciar el juego breakout
+					startBreakoutGame();
 				}
 			}
-		 }
+			prevEnterDown = enterDown;
+		}
 	}
 	else if (nivelDosPhase === 4) {
-		// Minigame - Question contest
-		runMinigameDos();
+		// FASE 4: Minijuego Breakout
+		runBreakoutGame();
 	}
-	else if (nivelDosPhase === 99) {
-		// Game over
-		drawGameOverDos();
-	}
-	else if (nivelDosPhase === 100) {
-			// Victory!
+	else if (nivelDosPhase === 5) {
+		// Victoria
 		drawVictoryDos();
 	}
-	// Update prevEnterDown at end of frame for proper edge detection
-
+	else if (nivelDosPhase === 99) {
+		// Game Over
+		drawGameOverDos();
+	}
+	
 	prevEnterDown = keyIsDown(ENTER);
 }
 
-function startCorridorDos() {
-	nivelDosPhase = 2;
-	nivelDosDialogIndex = 0;
-	nivelDosDialogActive = false;
-	// Remove old guide and create new one for corridor
-	if (nivelDosGuide && nivelDosGuide.remove) {
-		nivelDosGuide.remove();
-	}
-	nivelDosGuide = null;
-	// Create new guide for corridor
-	nivelDosGuide = new Sprite(width - 170, height - 120, 60, 150, 's');
-	nivelDosGuide.image = tourguideImg;
-	nivelDosGuide.scale = 0.22;
-}
-
-function startSalaJueces() {
-	nivelDosPhase = 3;
-	nivelDosDialogIndex = 0;
-	nivelDosDialogActive = false;
-}
-
-function startMinigameDos() {
+function startBreakoutGame() {
 	nivelDosPhase = 4;
 	levelTwoProgress = 0;
-	levelTwoHealth = 5;
+	levelTwoHealth = 3;
+	breakoutQuestionsAnswered = 0;
+	breakoutGamePaused = false;
+	
+	// Limpiar jueces
+	for (let juez of juezSprites) {
+		if (juez && !juez.removed) juez.remove();
+	}
+	juezSprites = [];
+	
+	// Ocultar a Zyro durante el juego
+	if (zyro) zyro.pos = {x: -5000, y: -5000};
+	
+	// Crear paddle (libro de leyes)
+	if (breakoutPaddle) breakoutPaddle.remove();
+	breakoutPaddle = new Sprite(width/2, height - 40, 120, 20, 'k');
+	breakoutPaddle.color = '#8B4513'; // Color café como un libro
+	breakoutPaddle.rotationLock = true;
+	
+	// Crear pelota (roja)
+	if (breakoutBall) breakoutBall.remove();
+	breakoutBall = new Sprite(width/2, height - 70, 12, 12, 'd');
+	breakoutBall.color = '#FF0000'; // Roja
+	breakoutBall.bounciness = 1;
+	breakoutBall.friction = 0;
+	breakoutBall.vel = {x: 4, y: -6};
+	breakoutBall.rotationLock = true;
+	
+	// Crear bloques (5 filas x 10 columnas = 50 bloques)
+	breakoutBlocks = [];
+	breakoutQuestionBlocks = [];
+	
+	let blockWidth = 70;
+	let blockHeight = 25;
+	let startX = (width - (blockWidth * 10)) / 2;
+	let startY = 80;
+	let colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8'];
+	
+	for (let row = 0; row < 5; row++) {
+		for (let col = 0; col < 10; col++) {
+			let x = startX + col * blockWidth + blockWidth/2;
+			let y = startY + row * blockHeight + blockHeight/2;
+			let block = new Sprite(x, y, blockWidth - 4, blockHeight - 4, 's');
+			block.color = colors[row];
+			block.isQuestionBlock = false;
+			block.hasBeenHit = false;
+			breakoutBlocks.push(block);
+		}
+	}
+	
+	// Seleccionar 10 bloques aleatorios para preguntas
+	let availableIndices = [];
+	for (let i = 0; i < breakoutBlocks.length; i++) {
+		availableIndices.push(i);
+	}
+	
+	for (let i = 0; i < 10; i++) {
+		let randomIdx = floor(random(availableIndices.length));
+		let blockIdx = availableIndices[randomIdx];
+		breakoutBlocks[blockIdx].isQuestionBlock = true;
+		breakoutBlocks[blockIdx].color = '#FFD700'; // Dorado para bloques de pregunta
+		breakoutQuestionBlocks.push(blockIdx);
+		availableIndices.splice(randomIdx, 1);
+	}
+	
+	// Resetear preguntas usadas
 	questionIndex = 0;
-	awaitingQuestion = false;
+	questionsAsked = []; // Usar el mismo sistema del nivel 1
 }
 
-function runMinigameDos() {
-	if (salaJuecesImg) image(salaJuecesImg,  0, 0, width, height);
-	else background(50, 140, 240);
+function runBreakoutGame() {
+	background(60, 140, 240); // Fondo azul claro
 	
-	zyro.pos = { x: width/2, y: height - 140 };
-	zyro.scale = 0.6;
-	if (zyro) zyro.draw();
+	if (!breakoutGamePaused) {
+		// Control de la paleta (libro) con flechas
+		if (keyIsDown(LEFT_ARROW)) {
+			breakoutPaddle.pos.x = max(breakoutPaddle.width/2, breakoutPaddle.pos.x - 8);
+		}
+		if (keyIsDown(RIGHT_ARROW)) {
+			breakoutPaddle.pos.x = min(width - breakoutPaddle.width/2, breakoutPaddle.pos.x + 8);
+		}
+		
+		// Mantener velocidad constante de la pelota
+		let speed = 7;
+		let currentSpeed = sqrt(breakoutBall.vel.x ** 2 + breakoutBall.vel.y ** 2);
+		if (currentSpeed > 0.1) {
+			breakoutBall.vel.x = (breakoutBall.vel.x / currentSpeed) * speed;
+			breakoutBall.vel.y = (breakoutBall.vel.y / currentSpeed) * speed;
+		}
+		
+		// Rebote en paredes laterales
+		if (breakoutBall.pos.x <= breakoutBall.width/2 || breakoutBall.pos.x >= width - breakoutBall.width/2) {
+			breakoutBall.vel.x *= -1;
+		}
+		// Rebote en techo
+		if (breakoutBall.pos.y <= breakoutBall.height/2) {
+			breakoutBall.vel.y *= -1;
+		}
+		
+		// Detección de colisión con la paleta (libro)
+		if (breakoutBall.collides(breakoutPaddle)) {
+			// Calcular ángulo de rebote basado en dónde golpeó
+			let hitPos = (breakoutBall.pos.x - breakoutPaddle.pos.x) / (breakoutPaddle.width/2);
+			breakoutBall.vel.x = hitPos * 5;
+			breakoutBall.vel.y = -abs(breakoutBall.vel.y);
+		}
+		
+		// Colisión con bloques
+		for (let i = breakoutBlocks.length - 1; i >= 0; i--) {
+			let block = breakoutBlocks[i];
+			if (block && !block.removed && !block.hasBeenHit) {
+				// Detección manual de colisión
+				let dx = abs(breakoutBall.pos.x - block.pos.x);
+				let dy = abs(breakoutBall.pos.y - block.pos.y);
+				
+				if (dx < (block.width/2 + breakoutBall.width/2) && 
+					dy < (block.height/2 + breakoutBall.height/2)) {
+					
+					block.hasBeenHit = true;
+					breakoutBall.vel.y *= -1;
+					
+					if (block.isQuestionBlock) {
+						// Bloque de pregunta - pausar y mostrar pregunta
+						breakoutGamePaused = true;
+						
+						// Seleccionar pregunta no usada
+						let availableQuestions = [];
+						for (let idx = 0; idx < judicialQuestions.length; idx++) {
+							if (!questionsAsked.includes(idx)) {
+								availableQuestions.push({
+									question: judicialQuestions[idx], 
+									originalIndex: idx
+								});
+							}
+						}
+						
+						// Si ya se usaron todas, resetear
+						if (availableQuestions.length === 0) {
+							questionsAsked = [];
+							for (let idx = 0; idx < judicialQuestions.length; idx++) {
+								availableQuestions.push({
+									question: judicialQuestions[idx], 
+									originalIndex: idx
+								});
+							}
+						}
+						
+						if (availableQuestions.length > 0) {
+							let randomIdx = floor(random(availableQuestions.length));
+							let selected = availableQuestions[randomIdx];
+							currentQuestion = selected.question;
+							questionsAsked.push(selected.originalIndex);
+						}
+					}
+					
+					// Remover bloque
+					block.remove();
+					breakoutBlocks.splice(i, 1);
+				}
+			}
+		}
+		
+		// Perder vida si la pelota cae al fondo
+		if (breakoutBall.pos.y > height + 20) {
+			levelTwoHealth--;
+			if (levelTwoHealth <= 0) {
+				// Game Over
+				cleanupBreakout();
+				if (crasheo) crasheo.play();
+				nivelDosPhase = 99;
+			} else {
+				// Resetear pelota
+				breakoutBall.pos = {x: width/2, y: height - 70};
+				breakoutBall.vel = {x: 4, y: -6};
+			}
+		}
+	}
 	
-	// Draw HUD
+	// Dibujar sprites
+	if (breakoutPaddle && !breakoutPaddle.removed) breakoutPaddle.draw();
+	if (breakoutBall && !breakoutBall.removed) breakoutBall.draw();
+	for (let block of breakoutBlocks) {
+		if (block && !block.removed) block.draw();
+	}
+	
+	// HUD
 	push();
 	fill(200);
-	rect(120, 30, 220, 20,  6);
-	fill('#00BCD4');
-	let hw = map(levelTwoHealth, 0, 5, 0, 220);
+	rect(120, 30, 220, 20, 6);
+	fill('#F44336');
+	let hw = map(levelTwoHealth, 0, 3, 0, 220);
 	rect(120 - 110 + hw/2, 30, hw, 20, 6);
-	fill('white'); uiText(14); textAlign(LEFT); text('Vida: ' + levelTwoHealth, 20, 26);
+	fill('white'); uiText(14); textAlign(LEFT); 
+	text('Vidas: ' + levelTwoHealth, 20, 26);
 	
 	fill(200);
 	rect(width - 140, 30, 220, 20, 6);
-	fill('#8BC34A');
-	let pw = map(levelTwoProgress,  0, 10, 0, 220);
+	fill('#4CAF50');
+	let pw = map(breakoutQuestionsAnswered, 0, 10, 0, 220);
 	rect(width - 140 - 110 + pw/2, 30, pw, 20, 6);
-	fill('white'); uiText(14); textAlign(RIGHT); text('Progreso: ' + levelTwoProgress + '/10', width - 20, 26);
+	fill('white'); uiText(14); textAlign(RIGHT); 
+	text('Preguntas: ' + breakoutQuestionsAnswered + '/10', width - 20, 26);
 	pop();
 	
-	// Show question
-	if (!awaitingQuestion && levelTwoProgress < 10 && levelTwoHealth > 0) {
-		// Pick random question
-		currentQuestion = random(judicialQuestions);
-		awaitingQuestion = true;
-	}
-	
-	if (awaitingQuestion && currentQuestion) {
+	// Mostrar pregunta si está pausado
+	if (breakoutGamePaused && currentQuestion) {
 		drawQuestionOverlay(currentQuestion);
 	}
 	
-	// Check win/lose
-	if (levelTwoProgress >= 10) {
+	// Victoria - cuando se responden 10 preguntas correctamente
+	if (breakoutQuestionsAnswered >= 10) {
+		cleanupBreakout();
+		nivelDosPhase = 5; // Fase de victoria
 		levelTwoCompleted = true;
-		nivelDosPhase = 100; // victory
 	}
-	if (levelTwoHealth <= 0) {
-		nivelDosPhase = 99; // game over
+}
+
+function cleanupBreakout() {
+	if (breakoutBall) {
+		breakoutBall.remove();
+		breakoutBall = null;
 	}
+	if (breakoutPaddle) {
+		breakoutPaddle.remove();
+		breakoutPaddle = null;
+	}
+	for (let block of breakoutBlocks) {
+		if (block && !block.removed) block.remove();
+	}
+	breakoutBlocks = [];
+	breakoutQuestionBlocks = [];
 }
 
 function drawGameOverDos() {
 	background(0);
 	if (zyroMuertoImg) {
 		imageMode(CENTER);
-		image(zyroMuertoImg, width/2, height/2 - 60, 220, 220);
+		image(zyroMuertoImg, width/2, height/2 - 60, 150, 150);
 		imageMode(CORNER);
 	}
-	fill('#F44336');
+	fill('#00BCD4');
 	textAlign(CENTER);
 	uiText(48);
-	text('¡Los jueces te expulsaron!', width/2, height/2 + 120);
-	fill('#F44336');
+	text('¡La justicia te ha vencido!', width/2, height/2 + 120);
+	fill('#00BCD4');
 	rect(width/2, height - 100, 260, 60, 16);
 	fill('white');
 	uiText(28);
 	text('Reintentar', width/2, height - 92);
 	
-	if (mouseIsPressed && mouseY > height - 130 && mouseY < height - 70 && mouseX > width/2 - 130 && mouseX < width/2 + 130) {
+	if (mouseIsPressed && mouseY > height - 130 && mouseY < height - 70 && 
+		mouseX > width/2 - 130 && mouseX < width/2 + 130) {
+		// Reintentar el nivel 2 desde el inicio
 		startNivelDos();
 	}
 }
 
+function startCorridorDos() {
+	nivelDosPhase = 2;
+	nivelDosDialogIndex = 0;
+	nivelDosDialogActive = true;
+	
+	// Reposicionar guía
+	if (nivelDosGuide && nivelDosGuide.remove) {
+		nivelDosGuide.remove();
+	}
+	nivelDosGuide = new Sprite(width - 170, height - 120, 60, 150, 's');
+	nivelDosGuide.image = tourguideImg;
+	nivelDosGuide.scale = 0.22;
+	
+	// Diálogo extenso sobre la Suprema Corte
+	nivelDosDialog = [
+		{ who: 'guia', text: 'Este es el edificio de la Suprema Corte de Justicia.' },
+		{ who: 'guia', text: 'Aquí trabaja el Poder Judicial de la Nación.' },
+		{ who: 'zyro', text: '¿Y qué hace el Poder Judicial?' },
+		{ who: 'guia', text: 'Su función principal es interpretar y aplicar la Constitución.' },
+		{ who: 'guia', text: 'Resuelven controversias constitucionales y protegen derechos fundamentales.' },
+		{ who: 'zyro', text: '¿Quiénes trabajan aquí?' },
+		{ who: 'guia', text: 'La Suprema Corte está integrada por 11 ministros.' },
+		{ who: 'guia', text: 'Son nombrados por el Presidente y aprobados por el Senado.' },
+		{ who: 'zyro', text: '¿Cuánto tiempo trabajan aquí?' },
+		{ who: 'guia', text: 'Cada ministro dura 15 años en su cargo.' },
+		{ who: 'guia', text: 'Es un cargo muy importante y duradero.' },
+		{ who: 'zyro', text: '¿Qué tipo de casos resuelven?' },
+		{ who: 'guia', text: 'Resuelven conflictos entre poderes del Estado.' },
+		{ who: 'guia', text: 'También pueden declarar leyes inconstitucionales.' },
+		{ who: 'guia', text: 'Y atienden juicios de amparo para proteger derechos.' },
+		{ who: 'zyro', text: 'Suena muy poderoso.' },
+		{ who: 'guia', text: 'Es el máximo tribunal del país.' },
+		{ who: 'guia', text: 'Su símbolo es la balanza, que representa la justicia.' },
+		{ who: 'guia', text: 'Bueno, el tour ha terminado.' },
+		{ who: 'guia', text: 'Te dejaré entrar a la sala. ¡Buena suerte!' }
+	];
+}
+
+function startSalaJueces() {
+	nivelDosPhase = 3;
+	nivelDosDialogIndex = 0;
+	nivelDosDialogActive = false;
+	mazoGolpeado = false;
+	
+	// Posicionar a Zyro a la izquierda
+	zyro.pos = { x: 80, y: height - 140 };
+	
+	// Crear sprite del mazo en el centro
+	if (gavelSprite) gavelSprite.remove();
+	gavelSprite = new Sprite(width/2, height/2, 60, 60, 's');
+	gavelSprite.color = color(139, 69, 19); // Color café/marrón
+	// Si hay imagen de mazo, usarla
+	if (gavelImg) gavelSprite.image = gavelImg;
+}
+
+function crearJueces() {
+	// Limpiar jueces anteriores
+	for (let juez of juezSprites) {
+		if (juez && !juez.removed) juez.remove();
+	}
+	juezSprites = [];
+	
+	// Remover el sprite del mazo
+	if (gavelSprite) {
+		gavelSprite.remove();
+		gavelSprite = null;
+	}
+	
+	// Crear 3 jueces (rectángulos de 100x200px)
+	let spacing = 140;
+	let startX = width/2 - spacing;
+	let colors = ['#8B4513', '#654321', '#A0522D']; // Tonos café
+	
+	for (let i = 0; i < 3; i++) {
+		let juez = new Sprite(startX + i * spacing, height/2, 100, 200, 's');
+		juez.color = colors[i];
+		juezSprites.push(juez);
+	}
+	
+	// Iniciar diálogo con los jueces sobre la piña en la pizza
+	nivelDosDialog = [
+		{ who: 'juez', text: '¡Alto ahí! ¿Quién se atreve a golpear el mazo sagrado?' },
+		{ who: 'zyro', text: 'Eh... yo solo quería...' },
+		{ who: 'juez', text: '¿Tú eres el que quiere reformar la ley que prohíbe la piña en la pizza?' },
+		{ who: 'zyro', text: '¿Qué? No, yo...' },
+		{ who: 'juez', text: '¡Nosotros AMAMOS la pizza hawaiana!' },
+		{ who: 'juez', text: 'Si quieres cambiar esa ley, tendrás que demostrarnos tu conocimiento.' },
+		{ who: 'zyro', text: 'Pero yo no quiero cambiar ninguna ley de pizza...' },
+		{ who: 'juez', text: '¡Silencio! Te desafiamos a un juego.' },
+		{ who: 'juez', text: 'Toma este libro de leyes. Lo usarás como plataforma.' },
+		{ who: 'juez', text: 'Deberás romper los bloques y responder preguntas.' },
+		{ who: 'juez', text: '¡Que comience el juicio!' }
+	];
+	nivelDosDialogActive = true;
+	nivelDosDialogIndex = 0;
+}
+
 function drawVictoryDos() {
-	background(50, 140, 240);
+	// Fondo azul claro (gradiente)
+	for (let i = 0; i < height; i++) {
+		let inter = map(i, 0, height, 0, 1);
+		let c = lerpColor(color(135, 206, 250), color(173, 216, 230), inter);
+		stroke(c);
+		line(0, i, width, i);
+	}
+	noStroke();
+	
 	fill('white');
 	textAlign(CENTER);
 	uiText(48);
 	text('¡Felicidades!', width/2, height/2 - 100);
 	uiText(32);
-	text('Los jueces te regalan el mazo como trofeo', width/2, height/2 - 40);
+	text('Los ministros te otorgan el mazo de la justicia', width/2, height/2 - 40);
 	
-	// Draw trophy
+	// Mostrar el mazo como trofeo
 	if (trofeoMazo) {
 		imageMode(CENTER);
 		image(trofeoMazo, width/2, height/2 + 40, 80, 80);
 		imageMode(CORNER);
+	} else {
+		// Dibujar mazo placeholder
+		push();
+		fill(139, 69, 19);
+		rect(width/2, height/2 + 40, 60, 60);
+		pop();
 	}
 	
+	uiText(24);
+	fill('#FFD700');
+	text('🚁 Un helicóptero te llevará de regreso 🚁', width/2, height/2 + 120);
+	fill('white');
 	uiText(20);
 	text('Presiona ENTER para regresar', width/2, height - 60);
 	
 	if (enterBuffer > 0) {
 		enterBuffer = 0;
-		// Mark level as completed
 		if (!completedLevels.includes(1)) completedLevels.push(1);
 		levelTwoCompleted = true;
-		// Return to garden
 		returnToGarden();
 	}
 }
 
-// ==================== NIVEL TRES: PODER EJECUTIVO ====================
-
+// ==================== NIVEL TRES - STUB ====================
 function startNivelTres() {
 	nivelTresPhase = 1;
-	nivelTresDialogIndex = 0;
-	nivelTresDialogActive = false;
-	nivelTresTourAccepted = false;
-	pongScoreZyro = 0;
-	pongScoreEnemy = 0;
-	pongRound = 1;
-	pongTarget = 3;
-	
-	// Place Zyro and viejo outside
-	zyro.pos = { x: 120, y: height - 140 };
-	zyro.scale = 0.7;
-	
-	// Create viejo sprite (otroAlien accompanies now)
-	if (viejoSprite) viejoSprite.remove();
-	viejoSprite = new Sprite(200, height - 140, 60, 150, 's');
-	viejoSprite.image = "assets/otroAlienvolteado.png";
-	viejoSprite.scale = 0.6;
-	
-	// Create guide
-	if (nivelTresGuide) nivelTresGuide.remove();
-	nivelTresGuide = new Sprite(width - 190, height - 150, 60, 150, 's');
-	nivelTresGuide.image = tourguideLeftImg;
-	nivelTresGuide.scale = 0.22;
 }
 
 function nivelTresLoop() {
-	if (nivelTresPhase === 1) {
-		// Outside Palacio Nacional
-		if (palacioNacionalBg) image(palacioNacionalBg, 0, 0, width, height);
-		else background(20, 80, 180);
-		
-		if (zyro) zyro.draw();
-		if (viejoSprite) viejoSprite.draw();
-		if (nivelTresGuide) nivelTresGuide.draw();
-		
-		// Show offer dialog
-		if (!nivelTresDialogActive && nivelTresDialogIndex === 0) {
-			nivelTresDialog = [
-				{ who: 'guia', text: 'Bienvenidos al Palacio Nacional. ¿Desean un recorrido?' },
-				{ who: 'otro', text: '¡Sí, por favor!' },
-				{ who: 'zyro', text: '...' }
-			];
-			nivelTresDialogIndex = 0;
-			nivelTresDialogActive = true;
-		}
-		
-		if (nivelTresDialogActive) {
-			drawLevelDialog(nivelTresDialog[nivelTresDialogIndex]);
-			push(); uiText(14); fill('white'); textAlign(CENTER); 
-			text('Presiona ENTER para aceptar, ESPACIO para rechazar', width/2, height - 40); 
-			pop();
-			
-			if (enterBuffer > 0) {
-				nivelTresTourAccepted = true;
-				nivelTresDialogActive = false;
-				nivelTresGuide.image = tourguideImg;
-				startCorridorTres();
-				enterBuffer = 0;
-			}
-			if (keyIsDown(32)) {
-				nivelTresTourAccepted = false;
-				nivelTresDialogActive = false;
-				startCorridorTres();
-			}
-			return;
-		}
-		
-		controlesZyroBase();
-	}
-	else if (nivelTresPhase === 2) {
-		// Corridor
-		if (pasilloNacionalImg) image(pasilloNacionalImg, 0, 0, width, height);
-		else background(35, 110, 200);
-		
-		zyro.pos = { x: width/2, y: height - 120 };
-		if (zyro) zyro.draw();
-		
-		if (viejoSprite) {
-			viejoSprite.pos = { x: width/2 - 80, y: height - 120 };
-			viejoSprite.draw();
-		}
-		
-		if (nivelTresTourAccepted && nivelTresGuide) {
-			nivelTresGuide.pos = { x: width - 170, y: height - 120 };
-			nivelTresGuide.draw();
-			
-			if (!nivelTresDialogActive && nivelTresDialogIndex === 0) {
-				nivelTresDialog = [
-					{ who: 'guia', text: 'Este es el Palacio Nacional, sede del Poder Ejecutivo.' },
-					{ who: 'guia', text: 'Aquí trabaja el Presidente de México, quien ejecuta las leyes y dirige el gobierno.' },
-					{ who: 'zyro', text: '¿Qué hace exactamente?' },
-					{ who: 'guia', text: 'El Presidente dirige la política exterior, nombra a su gabinete con aprobación del Senado, y puede vetar leyes.' },
-					{ who: 'guia', text: 'Su mandato dura 6 años y no puede ser reelecto. Debe ser mexicano por nacimiento y tener al menos 35 años.' },
-					{ who: 'zyro', text: 'Interesante...' },
-					{ who: 'guia', text: 'La sala está vacía ahora, pero puedes echar un vistazo rápido.' }
-				];
-				nivelTresDialogIndex = 0;
-				nivelTresDialogActive = true;
-			}
-			
-			if (nivelTresDialogActive) {
-				drawLevelDialog(nivelTresDialog[nivelTresDialogIndex]);
-				push(); uiText(14); fill('white'); textAlign(CENTER); 
-				text('Presiona ENTER para continuar', width/2, height - 40); 
-				pop();
-				
-				if (enterBuffer > 0) {
-					enterBuffer = 0;
-					nivelTresDialogIndex++;
-					if (nivelTresDialogIndex >= nivelTresDialog.length) {
-						nivelTresDialogActive = false;
-						// Agents approach
-						startAgentsScene();
-					}
-				}
-				return;
-			}
-		} else {
-			// No tour accepted - agents come faster
-			if (!nivelTresDialogActive) {
-				startAgentsScene();
-			}
-		}
-	}
-	else if (nivelTresPhase === 3) {
-		// Despacho Oval - presidente reveals
-		if (despachoOvalImg) image(despachoOvalImg, 0, 0, width, height);
-		else background(45, 130, 220);
-		
-		zyro.pos = { x: width/2 - 100, y: height - 140 };
-		if (zyro) zyro.draw();
-		
-		// Draw presidente and agents (black boxes)
-		fill(0);
-		rect(width/2, height/2, 75, 50); // presidente
-		rect(width/2 - 150, height/2, 75, 50); // agente 1
-		rect(width/2 + 150, height/2, 75, 50); // agente 2
-		
-		if (!nivelTresDialogActive && nivelTresDialogIndex === 0) {
-			nivelTresDialog = [
-				{ who: 'presidente', text: 'Zyro... te he estado observando.' },
-				{ who: 'presidente', text: 'Venciste al Congreso y a la Suprema Corte...' },
-				{ who: 'zyro', text: '¿Quién eres?' },
-				{ who: 'presidente', text: '¡Soy un marciano como tú! Bueno, de una raza rival.' },
-				{ who: 'presidente', text: 'Y no pienso entregar mi cargo tan fácilmente.' },
-				{ who: 'presidente', text: '¡Te reto a un duelo de conocimiento estilo pong!' }
-			];
-			nivelTresDialogIndex = 0;
-			nivelTresDialogActive = true;
-		}
-		
-		if (nivelTresDialogActive) {
-			drawLevelDialog(nivelTresDialog[nivelTresDialogIndex]);
-			push(); uiText(14); fill('white'); textAlign(CENTER); 
-			text('Presiona ENTER para continuar', width/2, height - 40); 
-			pop();
-			
-			if (enterBuffer > 0) {
-				enterBuffer = 0;
-				nivelTresDialogIndex++;
-				if (nivelTresDialogIndex >= nivelTresDialog.length) {
-					nivelTresDialogActive = false;
-					startPongRound(1);
-				}
-			}
-		}
-	}
-	else if (nivelTresPhase === 4 || nivelTresPhase === 5 || nivelTresPhase === 6) {
-		// Pong rounds
-		runPongGame();
-	}
-	else if (nivelTresPhase === 99) {
-		// Game over
-		drawGameOverTres();
-	}
-	else if (nivelTresPhase === 100) {
-		// Final victory!
-		drawFinalVictory();
-	}
-	// Update prevEnterDown at end of frame for proper edge detection
-	prevEnterDown = keyIsDown(ENTER);
-}
-
-function startCorridorTres() {
-	nivelTresPhase = 2;
-	nivelTresDialogIndex = 0;
-	nivelTresDialogActive = false;
-}
-
-function startAgentsScene() {
-	nivelTresPhase = 3;
-	nivelTresDialogIndex = 0;
-	nivelTresDialogActive = false;
-	// Viejo stays with guide, Zyro goes to despacho
-	if (viejoSprite) viejoSprite.pos = { x: -5000, y: -5000 };
-	if (nivelTresGuide) nivelTresGuide.pos = { x: -5000, y: -5000 };
-}
-
-function startPongRound(round) {
-	pongRound = round;
-	nivelTresPhase = 3 + round; // 4, 5, or 6
-	pongScoreZyro = 0;
-	pongScoreEnemy = 0;
-	pongQuestionActive = false;
-	
-	if (round === 1) pongTarget = 3;
-	else if (round === 2) pongTarget = 5;
-	else pongTarget = 7;
-	
-	// Initialize pong elements
-	if (!pongBall) {
-		pongBall = { x: width/2, y: height/2, vx: 4, vy: 3 };
-	} else {
-		pongBall.x = width/2;
-		pongBall.y = height/2;
-		pongBall.vx = 4;
-		pongBall.vy = 3;
-	}
-	
-	if (!pongPaddleZyro) {
-		pongPaddleZyro = { x: 50, y: height/2, h: 100 };
-	} else {
-		pongPaddleZyro.y = height/2;
-	}
-	
-	if (!pongPaddleEnemy) {
-		pongPaddleEnemy = { x: width - 50, y: height/2, h: 100 };
-	} else {
-		pongPaddleEnemy.y = height/2;
-	}
-}
-
-function runPongGame() {
-	if (despachoOvalImg) image(despachoOvalImg, 0, 0, width, height);
-	else background(45, 130, 220);
-	
-	// Draw pong elements
-	fill(255);
-	rect(pongPaddleZyro.x, pongPaddleZyro.y, 10, pongPaddleZyro.h);
-	rect(pongPaddleEnemy.x, pongPaddleEnemy.y, 10, pongPaddleEnemy.h);
-	ellipse(pongBall.x, pongBall.y, 15, 15);
-	
-	// Draw scores
-	uiText(32);
-	textAlign(CENTER);
-	text(pongScoreZyro + ' - ' + pongScoreEnemy, width/2, 50);
-	uiText(16);
-	text('Primero a ' + pongTarget, width/2, 80);
-	
-	// Control Zyro paddle
-	if (keyIsDown(UP_ARROW)) pongPaddleZyro.y = max(pongPaddleZyro.h/2, pongPaddleZyro.y - 5);
-	if (keyIsDown(DOWN_ARROW)) pongPaddleZyro.y = min(height - pongPaddleZyro.h/2, pongPaddleZyro.y + 5);
-	
-	// Simple AI for enemy
-	if (pongBall.x > width/2) {
-		if (pongBall.y < pongPaddleEnemy.y) pongPaddleEnemy.y -= 3;
-		if (pongBall.y > pongPaddleEnemy.y) pongPaddleEnemy.y += 3;
-	}
-	
-	// Move ball
-	if (!pongQuestionActive) {
-		pongBall.x += pongBall.vx;
-		pongBall.y += pongBall.vy;
-		
-		// Bounce top/bottom
-		if (pongBall.y < 0 || pongBall.y > height) pongBall.vy *= -1;
-		
-		// Collision with paddles
-		if (pongBall.x < pongPaddleZyro.x + 20 && abs(pongBall.y - pongPaddleZyro.y) < pongPaddleZyro.h/2) {
-			pongBall.vx *= -1;
-			// Trigger question
-			triggerPongQuestion();
-		}
-		if (pongBall.x > pongPaddleEnemy.x - 20 && abs(pongBall.y - pongPaddleEnemy.y) < pongPaddleEnemy.h/2) {
-			pongBall.vx *= -1;
-		}
-		
-		// Score points
-		if (pongBall.x < 0) {
-			pongScoreEnemy++;
-			resetPongBall();
-		}
-		if (pongBall.x > width) {
-			pongScoreZyro++;
-			resetPongBall();
-		}
-	}
-	
-	// Show question overlay
-	if (pongQuestionActive && pongCurrentQuestion) {
-		drawQuestionOverlay(pongCurrentQuestion);
-	}
-	
-	// Check win/lose
-	if (pongScoreZyro >= pongTarget) {
-		// Zyro wins this round
-		if (pongRound < 3) {
-			startPongRound(pongRound + 1);
-		} else {
-			// Final victory!
-			nivelTresPhase = 100;
-			levelThreeCompleted = true;
-		}
-	}
-	if (pongScoreEnemy >= pongTarget) {
-		// Zyro loses
-		nivelTresPhase = 99;
-	}
-}
-
-function triggerPongQuestion() {
-	// Pick question based on round
-	let pool = ejecutivoQuestions.filter(q => q.level === pongRound);
-	if (pool.length > 0) {
-		pongCurrentQuestion = random(pool);
-		pongQuestionActive = true;
-	}
-}
-
-function resetPongBall() {
-	pongBall.x = width/2;
-	pongBall.y = height/2;
-	pongBall.vx = (random() > 0.5 ? 1 : -1) * 4;
-	pongBall.vy = (random() > 0.5 ? 1 : -1) * 3;
-}
-
-function drawGameOverTres() {
-	background(0);
-	if (zyroMuertoImg) {
-		imageMode(CENTER);
-		image(zyroMuertoImg, width/2, height/2 - 60, 220, 220);
-		imageMode(CORNER);
-	}
-	fill('#F44336');
-	textAlign(CENTER);
-	uiText(48);
-	text('¡Fuiste expulsado del Palacio!', width/2, height/2 + 120);
-	fill('#F44336');
-	rect(width/2, height - 100, 260, 60, 16);
+	background(200, 100, 100);
 	fill('white');
-	uiText(28);
-	text('Reintentar', width/2, height - 92);
-	
-	if (mouseIsPressed && mouseY > height - 130 && mouseY < height - 70 && mouseX > width/2 - 130 && mouseX < width/2 + 130) {
-		startNivelTres();
-	}
-}
-
-function drawFinalVictory() {
-	background(0);
-	fill('#FFD700');
 	textAlign(CENTER);
-	uiText(56);
-	text('¡VICTORIA FINAL!', width/2, height/2 - 150);
-	uiText(32);
-	fill('white');
-	text('¡Has conquistado los tres poderes!', width/2, height/2 - 80);
-	text('El Presidente te entrega la banda presidencial', width/2, height/2 - 40);
-	
-	// Draw trophy
-	if (trofeoBanda) {
-		imageMode(CENTER);
-		image(trofeoBanda, width/2, height/2 + 40, 120, 120);
-		imageMode(CORNER);
-	}
-	
-	// Draw all three trophies
-	if (trofeoPin) image(trofeoPin, width/2 - 100, height/2 + 120, 60, 60);
-	if (trofeoMazo) image(trofeoMazo, width/2, height/2 + 120, 60, 60);
-	if (trofeoBanda) image(trofeoBanda, width/2 + 100, height/2 + 120, 60, 60);
-	
-	uiText(24);
-	text('FIN DEL JUEGO', width/2, height - 80);
-	text('Presiona ENTER para volver al jardín', width/2, height - 50);
-	
-	if (enterBuffer > 0) {
-		enterBuffer = 0;
-		if (!completedLevels.includes(2)) completedLevels.push(2);
-		returnToGarden();
-	}
+	text('Nivel 3 en construcción', width/2, height/2);
 }
 
-// Helper para retornar al jardín después de completar un nivel
+// ==================== HELPER FUNCTIONS ====================
 function returnToGarden() {
-	// Limpiar TODOS los objetos del nivel anterior
+	// Limpiar objetos del nivel
 	for (let obj of minigameFalling) {
 		if (obj && !obj.removed) obj.remove();
 	}
 	minigameFalling = [];
 	
-	// Remove guide sprite if it exists
-	if (nivelUnoGuide && nivelUnoGuide.remove) {
-		nivelUnoGuide.remove();
-	}
-	nivelUnoGuide = null;
-	
-	// Resetear variables de nivel
+	// Resetear fase del juego
 	screen = 2;
 	nivelUnoPhase = 0;
 	nivelDosPhase = 0;
@@ -2142,78 +2009,23 @@ function returnToGarden() {
 	awaitingQuestion = false;
 	currentQuestion = null;
 	
-	// Reposicionar personajes en las mismas posiciones iniciales
-	zyro.pos = { x: 200, y: height - 160 };
+	// Reposicionar personajes - Zyro MÁS A LA IZQUIERDA para que pueda acercarse
+	zyro.pos = { x: 150, y: height - 160 }; // Más cerca de otroAlien
+	zyro.vel = {x: 0, y: 0};
 	zyro.scale = 0.7;
-	zyro.vel = { x: 0, y: 0 }; // Reset velocity
-	zyro.physics = 'd'; // Use same physics as setup
-	zyro.rotationLock = true;
-	zyro.image = zyroIdle; // Reset to default image
-	zyro.visible = true; // Make sure Zyro is visible
-	
-	// Reposicionar el piso del jardín
-	pisoJardin.pos = { x: width/2, y: height - 65 };
-	
 	otroAlien.pos = { x: width - 200, y: height - 150 };
 	
-	// NO activar diálogo automáticamente - dejar que Zyro se mueva libremente
-	// y que el diálogo se active cuando se acerque a otroAlien
-	dialogueActive = false;
+	// IMPORTANTE: Activar el flag de diálogo de regreso
+	showReturnDialog = true;
+	returnDialogIndex = 0;
 	
-	// Set flag to trigger return dialog when Zyro approaches otroAlien
-	if (levelOneCompleted || levelTwoCompleted) {
-		showReturnDialog = true;
-	}
-	// Don't create level boxes here - they'll be created after dialog ends
+	// NO crear cajas de niveles inmediatamente - esperar al diálogo
+	levelBoxes = [];
 }
 
-// key handling for question answers
 function keyPressed(){
-    // NIVEL 1 - Solo responder si estamos en fase 4 Y esperando pregunta
-    if (nivelUnoPhase === 4 && awaitingQuestion && currentQuestion) {
-        let answer = -1;
-        
-        // Detectar qué tecla se presionó
-        if (keyCode === 49 || key === '1') answer = 0; // tecla 1
-        if (keyCode === 50 || key === '2') answer = 1; // tecla 2
-        if (keyCode === 51 || key === '3') answer = 2; // tecla 3
-        if (keyCode === 52 || key === '4') answer = 3; // tecla 4
-        
-        if (answer >= 0 && answer < 4) {
-            console.log('Respondiste:', answer, 'Correcta:', currentQuestion.correct);
-            
-            if (answer === currentQuestion.correct) {
-                levelOneProgress = min(10, levelOneProgress + 1);
-                console.log('¡Correcta! Progreso:', levelOneProgress);
-            } else {
-				levelOneHealth -= 1;
-				console.log('Incorrecta. Vida:', levelOneHealth);
-				
-				if (levelOneHealth <= 0) {
-					for (let obj of minigameFalling) {
-						obj.remove();
-					}
-					minigameFalling = [];
-					// Hide Zyro and play crash sound
-					if (zyro) zyro.pos = {x: -5000, y: -5000};
-					if (crasheo) crasheo.play();
-					nivelUnoPhase = 99;
-				}
-			}            // IMPORTANTE: Limpiar el estado de la pregunta
-            awaitingQuestion = false;
-            currentQuestion = null;
-            return false; // Prevenir comportamiento por defecto
-        }
-    }
-	
-	// retry after loss
-	if (nivelUnoPhase === 99 && keyCode === ENTER) {
-		startCamera();
-		startMinigame();
-	}
-	
-	// NIVEL 2 - Judicial questions
-	if (nivelDosPhase === 4 && awaitingQuestion && currentQuestion) {
+	// NIVEL 1
+	if (nivelUnoPhase === 4 && awaitingQuestion && currentQuestion) {
 		let answer = -1;
 		
 		if (keyCode === 49 || key === '1') answer = 0;
@@ -2223,21 +2035,29 @@ function keyPressed(){
 		
 		if (answer >= 0 && answer < 4) {
 			if (answer === currentQuestion.correct) {
-				levelTwoProgress++;
+				levelOneProgress = min(10, levelOneProgress + 1);
 			} else {
-				levelTwoHealth--;
-				if (levelTwoHealth <= 0) {
-					nivelDosPhase = 99;
+				levelOneHealth -= 1;
+				
+				if (levelOneHealth <= 0) {
+					for (let obj of minigameFalling) {
+						obj.remove();
+					}
+					minigameFalling = [];
+					if (zyro) zyro.pos = {x: -5000, y: -5000};
+					if (crasheo) crasheo.play();
+					nivelUnoPhase = 99;
 				}
 			}
-			currentQuestion = null;
+			
 			awaitingQuestion = false;
+			currentQuestion = null;
 			return false;
 		}
 	}
 	
-	// NIVEL 3 - Ejecutivo pong questions
-	if (pongQuestionActive && pongCurrentQuestion) {
+	// NIVEL 2 - Breakout
+	if (nivelDosPhase === 4 && breakoutGamePaused && currentQuestion) {
 		let answer = -1;
 		
 		if (keyCode === 49 || key === '1') answer = 0;
@@ -2246,17 +2066,22 @@ function keyPressed(){
 		if (keyCode === 52 || key === '4') answer = 3;
 		
 		if (answer >= 0 && answer < 4) {
-			if (answer === pongCurrentQuestion.correct) {
-				pongScoreZyro++;
+			if (answer === currentQuestion.correct) {
+				// Respuesta correcta - incrementar progreso
+				breakoutQuestionsAnswered++;
 			} else {
-				pongScoreEnemy++;
+				// Respuesta incorrecta - quitar vida
+				levelTwoHealth--;
+				if (levelTwoHealth <= 0) {
+					cleanupBreakout();
+					if (crasheo) crasheo.play();
+					nivelDosPhase = 99;
+				}
 			}
-			pongQuestionActive = false;
-			pongCurrentQuestion = null;
+			
+			breakoutGamePaused = false;
+			currentQuestion = null;
 			return false;
 		}
 	}
 }
-
-
-
