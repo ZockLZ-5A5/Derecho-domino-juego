@@ -324,14 +324,14 @@ function displayLevelBoxes() {
 		drawStar(starX, y, 40, 48, 5); // draw a larger 5-pointed star
 
 		// label text: draw on the right side of the box and fit/wrap to its area
-		fill('#fff');
-		textStyle(BOLD);
-		let textBoxW = w - 160;
-		let textBoxCx = x + 40; // center of the right-side text area
-		drawFittedWrappedText(lb.sprite.text, textBoxCx, y - 5, textBoxW, h - 20, 30, 16, 18);
-		textStyle(NORMAL);
-		
-		// Draw trophy if level is completed
+	fill('#fff');
+	textStyle(BOLD);
+	let textBoxW = w - 100; // Increased text area width
+	let textBoxCx = x + 25; // Shifted text area center
+	drawFittedWrappedText(lb.sprite.text, textBoxCx, y - 5, textBoxW, h - 20, 12, 9, 6);
+	textStyle(NORMAL);
+	
+	// Draw trophy if level is completed
 		let isCompleted = completedLevels.includes(lb.index);
 		if (isCompleted) {
 			push();
@@ -817,8 +817,11 @@ function nivelUnoLoop(){
 		drawLevelDialog(nivelUnoDialog[nivelUnoDialogIndex]);
 		// Show prompt to continue
 		push(); uiText(14); fill('white'); textAlign(CENTER); text('Presiona ENTER para continuar', width/2, height - 40); pop();
-		if (enterBuffer > 0) {
-			enterBuffer = 0; // consume buffer first
+		
+		// Use edge detection: only advance on NEW press, not while held
+		let enterDown = keyIsDown(ENTER);
+		let enterPressed = enterDown && !prevEnterDown;
+		if (enterPressed) {
 			nivelUnoDialogIndex++;
 			if (nivelUnoDialogIndex >= nivelUnoDialog.length) {
 				// dialog finished: guide disappears
@@ -828,24 +831,27 @@ function nivelUnoLoop(){
 				nivelUnoTourFinished = true;
 			}
 		}
+		prevEnterDown = enterDown;
 		// Only return if dialog is still active after processing
 		if (nivelUnoDialogActive) return;
 	}
 
 	// allow Zyro movement while approaching the guide
-	controlesZyroBase();		// Trigger dialogue when Zyro gets close or collides with the guide
-		if (!nivelUnoDialogActive && nivelUnoGuide) {
-			let dx = abs(zyro.pos.x - nivelUnoGuide.pos.x);
-			if (zyro.collides(nivelUnoGuide) || dx < 120) {
-				nivelUnoDialogActive = true;
-				// change guide image when dialogue starts
-				if (tourguideImg) nivelUnoGuide.image = tourguideImg;
-				nivelUnoDialogIndex = 0;
-				// don't return here; let the dialog rendering below handle advancement
-			}
+	controlesZyroBase();
+	
+	// Trigger dialogue when Zyro gets close or collides with the guide
+	if (!nivelUnoDialogActive && nivelUnoGuide) {
+		let dx = abs(zyro.pos.x - nivelUnoGuide.pos.x);
+		if (zyro.collides(nivelUnoGuide) || dx < 120) {
+			nivelUnoDialogActive = true;
+			// change guide image when dialogue starts
+			if (tourguideImg) nivelUnoGuide.image = tourguideImg;
+			nivelUnoDialogIndex = 0;
 		}
-		// draw hint to go to center (only allow entering after the tour dialog finished)
-		if (zyro.pos.x > width/2 - 50 && zyro.pos.x < width/2 + 50) {
+	}
+	
+	// draw hint to go to center (only allow entering after the tour dialog finished)
+	if (zyro.pos.x > width/2 - 50 && zyro.pos.x < width/2 + 50) {
 			push(); uiText(20); fill('white'); textAlign(CENTER);
 			if (nivelUnoTourFinished) text('Entrar? Presiona ENTER', width/2, 80);
 			else text('Habla con el guía antes de entrar', width/2, 80);
@@ -861,14 +867,15 @@ function nivelUnoLoop(){
 		// corridor
 		if (pasilloSanImg) image(pasilloSanImg, 0, 0, width, height);
 		else background(30);
-		// place Zyro and guide near bottom right and draw them
-		zyro.pos = { x: width - 220, y: height - 120 };
+		// place Zyro and guide near bottom right and draw them (Zyro 30px more to left)
+		zyro.pos = { x: width - 250, y: height - 120 };
 		if (nivelUnoGuide) nivelUnoGuide.pos = { x: width - 170, y: height - 120 };
 		if (zyro) zyro.draw();
 		if (nivelUnoGuide) nivelUnoGuide.draw();
 
 		// dialogue for corridor: single long sequence, advance with ENTER
-		if (!nivelUnoDialogActive && nivelUnoDialogIndex === 0) {
+		// Only initialize dialog once when entering this phase
+		if (nivelUnoDialogIndex === 0 && !nivelUnoDialogActive) {
 			nivelUnoDialog = [
 				{ who: 'guia', text: 'ok, este edificio es el palacio legislativo de san lazarus, sede del congreso de la union. aqui se reune uno de los pilares del poder de mexicus, el poder legislativo, a crear y modificar leyes con el fin de tener una sana convivencia y justicia para todos.' },
 				{ who: 'guia', text: 'pero como aqui no caben los chorromil mexicusanos q somos, hay dos grupos de personas que se encargan de representar a los estados y a la poblacion de mexicus, se llaman diputados y senadores.' },
@@ -885,76 +892,85 @@ function nivelUnoLoop(){
 				{ who: 'guia', text: 'mira, ahorita estan en sesion, pero te voy a dejar pasar a dar un vistazo a ver que escuchas, vale?' },
 				{ who: 'zyro', text: 'muchas gracias!' }
 			];
-			nivelUnoDialogIndex = 0;
 			nivelUnoDialogActive = true;
 		}
 
-		if (nivelUnoDialogActive) {
-			drawLevelDialog(nivelUnoDialog[nivelUnoDialogIndex]);
-			// Show prompt to continue
-			push(); uiText(14); fill('white'); textAlign(CENTER); text('Presiona ENTER para continuar', width/2, height - 40); pop();
-			if (enterBuffer > 0) {
-				enterBuffer = 0;
-				nivelUnoDialogIndex++;
-				if (nivelUnoDialogIndex >= nivelUnoDialog.length) {
-					nivelUnoDialogActive = false;
-					// guide disappears, allow entering camera
-					nivelUnoGuide.pos = { x: -5000, y: -5000 };
-				}
+	if (nivelUnoDialogActive) {
+		drawLevelDialog(nivelUnoDialog[nivelUnoDialogIndex]);
+		// Show prompt to continue
+		push(); uiText(14); fill('white'); textAlign(CENTER); text('Presiona ENTER para continuar', width/2, height - 40); pop();
+		
+		// Use edge detection: only advance on NEW press
+		let enterDown = keyIsDown(ENTER);
+		let enterPressed = enterDown && !prevEnterDown;
+		if (enterPressed) {
+			nivelUnoDialogIndex++;
+			if (nivelUnoDialogIndex >= nivelUnoDialog.length) {
+				nivelUnoDialogActive = false;
+				// guide disappears, allow entering camera
+				nivelUnoGuide.pos = { x: -5000, y: -5000 };
 			}
-			return;
 		}
-
-		// prompt to enter
-		push(); uiText(20); fill('white'); textAlign(CENTER); text('Presiona ENTER para entrar al hemiciclo', width/2, 80); pop();
-		if (enterBuffer > 0) {
-			enterBuffer = 0;
-			startCamera();
-		}
+		prevEnterDown = enterDown;
+		if (nivelUnoDialogActive) return;
 	}
-	else if (nivelUnoPhase === 3) {
-		// Camera screen: set background to camara and position zyro at left
-		if (camaraImg) image(camaraImg, 0, 0, width, height);
-		else background(80);
-		// place zyro left
-		zyro.pos = { x: 80, y: height - 140 };
-		if (zyro) zyro.draw();
+	
+	// prompt to enter
+	push(); uiText(20); fill('white'); textAlign(CENTER); text('Presiona ENTER para entrar al hemiciclo', width/2, 80); pop();
+	if (enterBuffer > 0) {
+		enterBuffer = 0;
+		startCamera();
+	}
+}
+else if (nivelUnoPhase === 3) {
+	// Camera screen: set background to camara and position zyro at left
+	if (camaraImg) image(camaraImg, 0, 0, width, height);
+	else background(80);
+	// Draw zyro (position set only once in startCamera)
+	if (zyro) zyro.draw();
 
-		// Voiceover dialogues when Zyro moves to middle
-		if (!nivelUnoDialogActive && nivelUnoDialogIndex === 0) {
-			nivelUnoDialog = [
-				{ who: 'senator', text: 'HEY TÚ? QUIÉN OSA INTERRUMPIR A ESTA CÁMARA?' },
-				{ who: 'zyro', text: 'hola, eh, perdon, solo estaba intentando ver que estab...' },
-				{ who: 'senator', text: 'como te atreves? estamos trabajando y vienes de metiche?' },
-				{ who: 'zyro', text: 'bueno ya me vo...' },
-				{ who: 'senator', text: 'ni lo creas, pagaras por haber entrado sin anunciarte!' }
-			];
-			nivelUnoDialogIndex = 0;
-			nivelUnoDialogActive = false; // will trigger when Zyro reaches middle
-		}
+	// Voiceover dialogues when Zyro moves to middle
+	if (!nivelUnoDialogActive && nivelUnoDialogIndex === 0) {
+		nivelUnoDialog = [
+			{ who: 'senator', text: 'HEY TÚ? QUIÉN OSA INTERRUMPIR A ESTA CÁMARA?' },
+			{ who: 'zyro', text: 'hola, eh, perdon, solo estaba intentando ver que estab...' },
+			{ who: 'senator', text: 'como te atreves? estamos trabajando y vienes de metiche?' },
+			{ who: 'zyro', text: 'bueno ya me vo...' },
+			{ who: 'senator', text: 'ni lo creas, pagaras por haber entrado sin anunciarte!' }
+		];
+		nivelUnoDialogIndex = 0;
+		nivelUnoDialogActive = false; // will trigger when Zyro reaches middle
+	}
 
+	// Allow movement if dialog not active
+	if (!nivelUnoDialogActive) {
 		controlesZyroBase();
-		if (zyro.pos.x > width/2 - 20 && !nivelUnoDialogActive) {
-			// trigger voiceover
+		// Trigger dialogue when Zyro reaches middle
+		if (zyro.pos.x > width/2 - 20) {
 			nivelUnoDialogActive = true;
 		}
-
-		if (nivelUnoDialogActive) {
-			drawLevelDialog(nivelUnoDialog[nivelUnoDialogIndex]);
-			// Show prompt to continue
-			push(); uiText(14); fill('white'); textAlign(CENTER); text('Presiona ENTER para continuar', width/2, height - 40); pop();
-			if (enterBuffer > 0) {
-				enterBuffer = 0;
-				nivelUnoDialogIndex++;
-				if (nivelUnoDialogIndex >= nivelUnoDialog.length) {
-					// start minigame
-					nivelUnoDialogActive = false;
-					startMinigame();
-				}
-			}
-			return;
-		}
 	}
+
+	if (nivelUnoDialogActive) {
+		drawLevelDialog(nivelUnoDialog[nivelUnoDialogIndex]);
+		// Show prompt to continue
+		push(); uiText(14); fill('white'); textAlign(CENTER); text('Presiona ENTER para continuar', width/2, height - 40); pop();
+		
+		// Use edge detection: only advance on NEW press
+		let enterDown = keyIsDown(ENTER);
+		let enterPressed = enterDown && !prevEnterDown;
+		if (enterPressed) {
+			nivelUnoDialogIndex++;
+			if (nivelUnoDialogIndex >= nivelUnoDialog.length) {
+				// start minigame
+				nivelUnoDialogActive = false;
+				startMinigame();
+			}
+		}
+		prevEnterDown = enterDown;
+		if (nivelUnoDialogActive) return;
+	}
+}
 	else if (nivelUnoPhase === 4) {
 		// run minigame loop
 		runMinigame();
@@ -1007,6 +1023,12 @@ function startCorridor(){
 	// reposition zyro and guide will be shown in loop
 	nivelUnoDialogIndex = 0;
 	nivelUnoDialogActive = false;
+	// Recreate guide if needed
+	if (!nivelUnoGuide || nivelUnoGuide.removed) {
+		nivelUnoGuide = new Sprite(width - 170, height - 120, 60, 150, 's');
+		nivelUnoGuide.image = tourguideImg;
+		nivelUnoGuide.scale = 0.22;
+	}
 }
 
 function startCamera(){
@@ -1043,34 +1065,40 @@ function runMinigame(){
 	else background(80);
 
 	// shrink zyro and confine left-right movement
-	zyro.scale = 0.45;
-	if (keyIsDown(LEFT_ARROW)) zyro.pos.x = max(30, zyro.pos.x - 6);
-	if (keyIsDown(RIGHT_ARROW)) zyro.pos.x = min(width - 30, zyro.pos.x + 6);
-	zyro.pos.y = height - 100;
-	if (zyro) zyro.draw();
+	zyro.scale = 0.6;
+	if (keyIsDown(LEFT_ARROW)) zyro.pos.x = max(40, zyro.pos.x - 7);
+	if (keyIsDown(RIGHT_ARROW)) zyro.pos.x = min(width - 40, zyro.pos.x + 7);
+	zyro.pos.y = height - 70;
+	zyro.draw(); // Draw Zyro AFTER background
 
-	// spawn falling objects periodically
-	minigameSpawnTimer++;
-	if (minigameSpawnTimer > 40) {
-		minigameSpawnTimer = 0;
-		// random choose chair or manuscript (chairs more common)
-		let isChair = random() < 0.6;
-		let s = new Sprite(random(40, width-40), -40, 40, 40, 'd');
-		s.physics = 'k';
-		s.collider = 'dynamic';
-		s.vel = {x:0, y: isChair ? random(2,4) : random(1.5,3)};
-		s.imgType = isChair ? 'chair' : 'manuscript';
-		s.image = isChair ? chairImg : manuscriptImg;
-		minigameFalling.push(s);
+	// spawn falling objects periodically (pause spawning during questions)
+	if (!awaitingQuestion) {
+		minigameSpawnTimer++;
+		if (minigameSpawnTimer > 40) {
+			minigameSpawnTimer = 0;
+			// random choose chair or manuscript (chairs more common)
+			let isChair = random() < 0.6;
+			let s = new Sprite(random(40, width-40), -40, 15, 15, 'd');
+			s.physics = 'k';
+			s.collider = 'dynamic';
+			s.vel = {x:0, y: isChair ? random(0.4, 0.7) : random(0.3, 0.6)};
+			s.imgType = isChair ? 'chair' : 'manuscript';
+			s.image = isChair ? chairImg : manuscriptImg;
+			minigameFalling.push(s);
+		}
 	}
 
-	// update and draw falling
+	// update and draw falling (pause movement during questions)
 	for (let i = minigameFalling.length -1; i>=0; i--) {
 		let s = minigameFalling[i];
+		// Only move if not waiting for question answer
+		if (!awaitingQuestion) {
 			s.pos.y += s.vel.y;
-			s.draw();
-		// collision with zyro
-		if (zyro.collides(s)) {
+		}
+		s.draw();
+		// collision with zyro (increased detection range)
+		let distance = dist(zyro.pos.x, zyro.pos.y, s.pos.x, s.pos.y);
+		if (distance < 50) {
 			if (s.imgType === 'chair') {
 				levelOneHealth -= 1;
 				// remove sprite
