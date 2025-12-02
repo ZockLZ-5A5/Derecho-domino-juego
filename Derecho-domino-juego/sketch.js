@@ -139,7 +139,11 @@ function preload() {
 	balanzaImg = loadImage("assets/balanza.png");
 	zyroMuertoImg = loadImage("assets/muerto.png");
 	
-	// Level 2 (Judicial) assets - se crearán en setup()
+	// Level 2 (Judicial) assets
+	corteBg = loadImage("assets/supremacortefuera.png");
+	pasilloCorteImg = loadImage("assets/supremacortepasillo.png");
+	salaJuecesImg = loadImage("assets/supremacortenivel.png");
+	
 	// Level 3 (Ejecutivo) assets - se crearán en setup()
 	// Trofeos - se crearán en setup()
 	
@@ -1655,13 +1659,31 @@ function startBreakoutGame() {
 function runBreakoutGame() {
 	background(60, 140, 240); // Fondo azul claro
 	
+	// Verificar que los sprites existen
+	if (!breakoutPaddle || !breakoutBall) {
+		console.log('Error: sprites no existen');
+		startBreakoutGame(); // Reintentar crear los sprites
+		return;
+	}
+	
 	if (!breakoutGamePaused) {
-		// Control de la paleta (libro) con flechas
+		// Control de la paleta (libro) con flechas - usar velocity
 		if (keyIsDown(LEFT_ARROW)) {
-			breakoutPaddle.pos.x = max(breakoutPaddle.width/2, breakoutPaddle.pos.x - 8);
+			breakoutPaddle.vel.x = -8;
+		} else if (keyIsDown(RIGHT_ARROW)) {
+			breakoutPaddle.vel.x = 8;
+		} else {
+			breakoutPaddle.vel.x = 0;
 		}
-		if (keyIsDown(RIGHT_ARROW)) {
-			breakoutPaddle.pos.x = min(width - breakoutPaddle.width/2, breakoutPaddle.pos.x + 8);
+		
+		// Limitar el paddle a los bordes
+		if (breakoutPaddle.pos.x < breakoutPaddle.width/2) {
+			breakoutPaddle.pos.x = breakoutPaddle.width/2;
+			breakoutPaddle.vel.x = 0;
+		}
+		if (breakoutPaddle.pos.x > width - breakoutPaddle.width/2) {
+			breakoutPaddle.pos.x = width - breakoutPaddle.width/2;
+			breakoutPaddle.vel.x = 0;
 		}
 		
 		// Mantener velocidad constante de la pelota
@@ -1758,9 +1780,9 @@ function runBreakoutGame() {
 				breakoutBall.vel = {x: 4, y: -6};
 			}
 		}
-	}
+	} // Fin de if (!breakoutGamePaused)
 	
-	// Dibujar sprites
+	// Dibujar sprites SIEMPRE (incluso si está pausado)
 	if (breakoutPaddle && !breakoutPaddle.removed) breakoutPaddle.draw();
 	if (breakoutBall && !breakoutBall.removed) breakoutBall.draw();
 	for (let block of breakoutBlocks) {
