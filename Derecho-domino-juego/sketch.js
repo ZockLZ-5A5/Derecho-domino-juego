@@ -582,10 +582,7 @@ function setup(){ // corre 1 vez, CARGAR SPRITES AQUÍ!!!
 	pisoJardin = new Sprite(-5000, -5000, width, 20, "s");
 	pisoJardin.opacity = 0;
 	
-	// Create placeholder images for levels 2 and 3
-	corteBg = createPlaceholderImage(width, height, color(30, 100, 200));
-	pasilloCorteImg = createPlaceholderImage(width, height, color(40, 120, 220));
-	salaJuecesImg = createPlaceholderImage(width, height, color(50, 140, 240));
+	// Create placeholder images for level 3
 	gavelImg = createPlaceholderImage(60, 60, color(139, 69, 19));
 	
 	palacioNacionalBg = createPlaceholderImage(width, height, color(20, 80, 180));
