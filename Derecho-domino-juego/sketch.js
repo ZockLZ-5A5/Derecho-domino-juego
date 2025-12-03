@@ -1130,6 +1130,8 @@ function startMinigame(){
 	minigameFalling = [];
 	minigameSpawnTimer = 0;
 	questionsAsked = [];
+	
+	// Crear pool de preguntas y mezclarlo
 	questionsPool = [
 		{q: '¿Qué es el Poder Legislativo?', opts: ['El poder encargado de aplicar las leyes','El poder encargado de interpretar las leyes','El poder encargado de crear y modificar leyes','El poder que dirige a las Fuerzas Armadas'], correct:2},
 		{q: '¿Dónde se reúnen?', opts: ['En el Palacio Nacional','En el Congreso de la Unión','En la Suprema Corte','En el Senado Internacional'], correct:1},
@@ -1142,6 +1144,15 @@ function startMinigame(){
 		{q: '¿Qué cámara revisa los nombramientos que propone el Presidente?', opts: ['Diputados','Jueces','Senadores','Gobernadores'], correct:2},
 		{q: '¿Cuánto dura un senador en su cargo?', opts: ['2 años','3 años','6 años','12 años'], correct:2}
 	];
+	
+	// Mezclar el pool de preguntas aleatoriamente
+	for (let i = questionsPool.length - 1; i > 0; i--) {
+		let j = floor(random(i + 1));
+		let temp = questionsPool[i];
+		questionsPool[i] = questionsPool[j];
+		questionsPool[j] = temp;
+	}
+	
 	awaitingQuestion = false;
 }
 
@@ -1214,57 +1225,33 @@ function runMinigame(){
 			
 			let collisionRadius = (s.imgType === 'manuscript') ? 60 : 25;
 			
-			if (dx < collisionRadius && dy < collisionRadius) {
-				s.hasCollided = true;
-				
-				if (s.imgType === 'chair') {
-					levelOneHealth -= 1;
-					
-					if (s && !s.removed) {
-						s.remove();
-						minigameFalling.splice(i, 1);
-					}
-					
-					if (levelOneHealth <= 0) {
-						for (let obj of minigameFalling) {
-							if (obj && !obj.removed) obj.remove();
-						}
-						minigameFalling = [];
-						if (zyro) zyro.pos = {x: -5000, y: -5000};
-						if (crasheo) crasheo.play();
-						nivelUnoPhase = 99;
-					}
-				} else {
-					// MANUSCRITO
-					let availableQuestions = [];
-					for (let idx = 0; idx < questionsPool.length; idx++) {
-						if (!questionsAsked.includes(idx)) {
-							availableQuestions.push({
-								question: questionsPool[idx], 
-								originalIndex: idx
-							});
-						}
-					}
-					
-					if (availableQuestions.length === 0) {
-						questionsAsked = [];
-						for (let idx = 0; idx < questionsPool.length; idx++) {
-							availableQuestions.push({
-								question: questionsPool[idx], 
-								originalIndex: idx
-							});
-						}
-					}
-					
-					if (availableQuestions.length > 0) {
-						let randomIdx = floor(random(availableQuestions.length));
-						let selected = availableQuestions[randomIdx];
-						currentQuestion = selected.question;
-						questionsAsked.push(selected.originalIndex);
-						awaitingQuestion = true;
-					}
-					
-					if (s && !s.removed) {
+					if (dx < collisionRadius && dy < collisionRadius) {
+						s.hasCollided = true;
+						
+						if (s.imgType === 'chair') {
+							levelOneHealth -= 1;
+							
+							if (s && !s.removed) {
+								s.remove();
+								minigameFalling.splice(i, 1);
+							}
+							
+							if (levelOneHealth <= 0) {
+								for (let obj of minigameFalling) {
+									if (obj && !obj.removed) obj.remove();
+								}
+								minigameFalling = [];
+								if (zyro) zyro.pos = {x: -5000, y: -5000};
+								if (crasheo) crasheo.play();
+								nivelUnoPhase = 99;
+							}
+						} else {
+							// MANUSCRITO - usar siguiente pregunta del pool mezclado
+							if (questionsAsked.length < questionsPool.length) {
+								currentQuestion = questionsPool[questionsAsked.length];
+								questionsAsked.push(questionsAsked.length);
+								awaitingQuestion = true;
+							}					if (s && !s.removed) {
 						s.remove();
 						minigameFalling.splice(i, 1);
 					}
@@ -1502,17 +1489,17 @@ function nivelDosLoop() {
 					startSalaJueces();
 				}
 			}
-			prevEnterDown = enterDown;
 		}
 	}
 	else if (nivelDosPhase === 3) {
 		// FASE 3: Sala de Jueces - Encuentro con el mazo y los jueces
 		background(60, 140, 240); // Fondo azul aún más claro
 		
-		// Posicionar Zyro a la izquierda
+		// Posicionar Zyro a la izquierda solo si no ha golpeado el mazo
 		if (!mazoGolpeado) {
-			zyro.pos.x = 80;
 			zyro.pos.y = height - 140;
+			// Permitir movimiento SIEMPRE antes de golpear el mazo
+			controlesZyroBase();
 		}
 		if (zyro) zyro.draw();
 		
@@ -1520,11 +1507,22 @@ function nivelDosLoop() {
 		if (!mazoGolpeado && gavelSprite) {
 			gavelSprite.draw();
 			
-			// Mostrar hint para golpear el mazo
-			let dx = abs(zyro.pos.x - gavelSprite.pos.x);
-			if (dx < 60) {
-				push(); uiText(18); fill('white'); textAlign(CENTER);
-				text('Presiona ENTER para golpear el mazo', width/2, 60);
+			// Mostrar instrucciones en pantalla
+			push();
+			fill('white');
+			uiText(20);
+			textAlign(CENTER);
+			text('Acércate al mazo en el centro', width/2, 60);
+			pop();
+			
+			// Mostrar hint para golpear el mazo cuando Zyro esté cerca
+			let dx = abs(zyro.pos.x - gavelSprite.x);
+			if (dx < 150) {
+				push(); 
+				uiText(24); 
+				fill('#FFD700');
+				textAlign(CENTER);
+				text('Presiona ENTER para golpear el mazo', width/2, 100);
 				pop();
 				
 				if (enterBuffer > 0) {
@@ -1534,11 +1532,35 @@ function nivelDosLoop() {
 					crearJueces();
 				}
 			}
-		}
-		
-		// Permitir movimiento solo antes de golpear el mazo y cuando no hay diálogo activo
-		if (!mazoGolpeado && !nivelDosDialogActive) {
-			controlesZyroBase();
+		} else if (!mazoGolpeado) {
+			// Si el mazo no existe, mostrarlo como rectángulo
+			push();
+			fill(139, 69, 19);
+			rect(width/2, height/2, 60, 60);
+			pop();
+			
+			push();
+			fill('white');
+			uiText(20);
+			textAlign(CENTER);
+			text('Acércate al mazo (cuadrado café)', width/2, 60);
+			pop();
+			
+			let dx = abs(zyro.pos.x - width/2);
+			if (dx < 150) {
+				push(); 
+				uiText(24); 
+				fill('#FFD700');
+				textAlign(CENTER);
+				text('Presiona ENTER para golpear el mazo', width/2, 100);
+				pop();
+				
+				if (enterBuffer > 0) {
+					enterBuffer = 0;
+					mazoGolpeado = true;
+					crearJueces();
+				}
+			}
 		}
 		
 		// Dibujar jueces si ya fueron creados
@@ -1564,7 +1586,6 @@ function nivelDosLoop() {
 					startBreakoutGame();
 				}
 			}
-			prevEnterDown = enterDown;
 		}
 	}
 	else if (nivelDosPhase === 4) {
@@ -1659,54 +1680,44 @@ function startBreakoutGame() {
 function runBreakoutGame() {
 	background(60, 140, 240); // Fondo azul claro
 	
-	// Verificar que los sprites existen
-	if (!breakoutPaddle || !breakoutBall) {
-		console.log('Error: sprites no existen');
-		startBreakoutGame(); // Reintentar crear los sprites
-		return;
-	}
-	
 	if (!breakoutGamePaused) {
-		// Control de la paleta (libro) con flechas - usar velocity
-		if (keyIsDown(LEFT_ARROW)) {
-			breakoutPaddle.vel.x = -8;
-		} else if (keyIsDown(RIGHT_ARROW)) {
-			breakoutPaddle.vel.x = 8;
-		} else {
-			breakoutPaddle.vel.x = 0;
+		// Control de la paleta (libro) con flechas
+		if (keyIsDown(LEFT_ARROW) && breakoutPaddle) {
+			breakoutPaddle.x -= 8;
+			if (breakoutPaddle.x < breakoutPaddle.width/2) {
+				breakoutPaddle.x = breakoutPaddle.width/2;
+			}
 		}
-		
-		// Limitar el paddle a los bordes
-		if (breakoutPaddle.pos.x < breakoutPaddle.width/2) {
-			breakoutPaddle.pos.x = breakoutPaddle.width/2;
-			breakoutPaddle.vel.x = 0;
-		}
-		if (breakoutPaddle.pos.x > width - breakoutPaddle.width/2) {
-			breakoutPaddle.pos.x = width - breakoutPaddle.width/2;
-			breakoutPaddle.vel.x = 0;
+		if (keyIsDown(RIGHT_ARROW) && breakoutPaddle) {
+			breakoutPaddle.x += 8;
+			if (breakoutPaddle.x > width - breakoutPaddle.width/2) {
+				breakoutPaddle.x = width - breakoutPaddle.width/2;
+			}
 		}
 		
 		// Mantener velocidad constante de la pelota
 		let speed = 7;
-		let currentSpeed = sqrt(breakoutBall.vel.x ** 2 + breakoutBall.vel.y ** 2);
-		if (currentSpeed > 0.1) {
-			breakoutBall.vel.x = (breakoutBall.vel.x / currentSpeed) * speed;
-			breakoutBall.vel.y = (breakoutBall.vel.y / currentSpeed) * speed;
-		}
-		
-		// Rebote en paredes laterales
-		if (breakoutBall.pos.x <= breakoutBall.width/2 || breakoutBall.pos.x >= width - breakoutBall.width/2) {
-			breakoutBall.vel.x *= -1;
-		}
-		// Rebote en techo
-		if (breakoutBall.pos.y <= breakoutBall.height/2) {
-			breakoutBall.vel.y *= -1;
+		if (breakoutBall) {
+			let currentSpeed = sqrt(breakoutBall.vel.x ** 2 + breakoutBall.vel.y ** 2);
+			if (currentSpeed > 0.1) {
+				breakoutBall.vel.x = (breakoutBall.vel.x / currentSpeed) * speed;
+				breakoutBall.vel.y = (breakoutBall.vel.y / currentSpeed) * speed;
+			}
+			
+			// Rebote en paredes laterales
+			if (breakoutBall.x <= breakoutBall.width/2 || breakoutBall.x >= width - breakoutBall.width/2) {
+				breakoutBall.vel.x *= -1;
+			}
+			// Rebote en techo
+			if (breakoutBall.y <= breakoutBall.height/2) {
+				breakoutBall.vel.y *= -1;
+			}
 		}
 		
 		// Detección de colisión con la paleta (libro)
-		if (breakoutBall.collides(breakoutPaddle)) {
+		if (breakoutBall && breakoutPaddle && breakoutBall.collides(breakoutPaddle)) {
 			// Calcular ángulo de rebote basado en dónde golpeó
-			let hitPos = (breakoutBall.pos.x - breakoutPaddle.pos.x) / (breakoutPaddle.width/2);
+			let hitPos = (breakoutBall.x - breakoutPaddle.x) / (breakoutPaddle.width/2);
 			breakoutBall.vel.x = hitPos * 5;
 			breakoutBall.vel.y = -abs(breakoutBall.vel.y);
 		}
@@ -1714,10 +1725,10 @@ function runBreakoutGame() {
 		// Colisión con bloques
 		for (let i = breakoutBlocks.length - 1; i >= 0; i--) {
 			let block = breakoutBlocks[i];
-			if (block && !block.removed && !block.hasBeenHit) {
+			if (block && !block.removed && !block.hasBeenHit && breakoutBall) {
 				// Detección manual de colisión
-				let dx = abs(breakoutBall.pos.x - block.pos.x);
-				let dy = abs(breakoutBall.pos.y - block.pos.y);
+				let dx = abs(breakoutBall.x - block.x);
+				let dy = abs(breakoutBall.y - block.y);
 				
 				if (dx < (block.width/2 + breakoutBall.width/2) && 
 					dy < (block.height/2 + breakoutBall.height/2)) {
@@ -1767,7 +1778,7 @@ function runBreakoutGame() {
 		}
 		
 		// Perder vida si la pelota cae al fondo
-		if (breakoutBall.pos.y > height + 20) {
+		if (breakoutBall && breakoutBall.y > height + 20) {
 			levelTwoHealth--;
 			if (levelTwoHealth <= 0) {
 				// Game Over
@@ -1776,7 +1787,8 @@ function runBreakoutGame() {
 				nivelDosPhase = 99;
 			} else {
 				// Resetear pelota
-				breakoutBall.pos = {x: width/2, y: height - 70};
+				breakoutBall.x = width/2;
+				breakoutBall.y = height - 70;
 				breakoutBall.vel = {x: 4, y: -6};
 			}
 		}
@@ -1864,7 +1876,7 @@ function drawGameOverDos() {
 function startCorridorDos() {
 	nivelDosPhase = 2;
 	nivelDosDialogIndex = 0;
-	nivelDosDialogActive = true;
+	nivelDosDialogActive = true; // Activar diálogo inmediatamente
 	
 	// Reposicionar guía
 	if (nivelDosGuide && nivelDosGuide.remove) {
@@ -1912,8 +1924,9 @@ function startSalaJueces() {
 	if (gavelSprite) gavelSprite.remove();
 	gavelSprite = new Sprite(width/2, height/2, 60, 60, 's');
 	gavelSprite.color = color(139, 69, 19); // Color café/marrón
+	gavelSprite.rotationLock = true;
 	// Si hay imagen de mazo, usarla
-	if (gavelImg) gavelSprite.image = gavelImg;
+	if (gavelImg && gavelImg.width > 1) gavelSprite.image = gavelImg;
 }
 
 function crearJueces() {
