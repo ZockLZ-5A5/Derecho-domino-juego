@@ -40,7 +40,8 @@ let enterBuffer = 0; // frames during which a recent ENTER press is remembered
 // --- Level 1 runtime state ---
 let tourguideLeftImg;
 let tourguideImg;
-let guiaFemmImg;
+let guiaFemmImg; // Para niveles 1 y 2
+let guiaFemImg; // Para nivel 3
 let pasilloSanImg, camaraImg, chairImg, manuscriptImg, balanzaImg;
 let nivelUnoPhase = 0; // 0=not started,1=outside,2=corridor,3=camera,4=minigame
 let nivelUnoDialog = [];
@@ -88,6 +89,7 @@ let breakoutBlocks = [];
 let breakoutQuestionBlocks = []; // Indices of blocks that trigger questions
 let breakoutQuestionsAnswered = 0;
 let breakoutGamePaused = false;
+let breakoutSavedVelocity = {x: 0, y: 0}; // Guardar velocidad durante pausa
 let libroImg; // imagen del libro (placeholder por ahora)
 // --- Level 3 (Ejecutivo) runtime state ---
 let nivelTresPhase = 0; // 0=not started, 1=outside, 2=corridor, 3=despacho, 4=pong1, 5=pong2, 6=pong3
@@ -103,6 +105,8 @@ let agenteSecreto = null; // agente del servicio secreto
 let alipresi = null; // presidente alienígena antagonista
 let alienMaloImg; // imagen del presidente malo
 let guardFemImg, guardHomImg; // imágenes de los guardias
+let guardFemSprite = null; // sprite de la guardia femenina (en pong)
+let guardHomSprite = null; // sprite del guardia masculino (en pong)
 let viejoSprite = null; // el viejo acompaña en nivel 3
 let pongBall, pongPaddleZyro, pongPaddleEnemy;
 let pongScoreZyro = 0, pongScoreEnemy = 0;
@@ -113,8 +117,11 @@ let pongQuestionActive = false;
 let pongCurrentQuestion = null;
 let pongTimer = 0;
 let pongTimerMax = 10; // 10 segundos por pregunta
+let pongGameTimer = 0; // Temporizador durante el juego
+let pongQuestionTriggered = false; // Si ya se activó la pregunta en esta ronda
 let pongStunnedZyro = false;
 let pongStunnedEnemy = false;
+let pongStunTimer = 0; // Temporizador de atontamiento
 let pongLives = 3; // vidas de Zyro
 let pongInterRoundDialog = false;
 let pongInterRoundIndex = 0;
@@ -159,7 +166,8 @@ function preload() {
 	zyroMuertoImg = loadImage("assets/muerto.png");
 	
 	// Level 2 (Judicial) assets
-	guiaFemmImg = loadImage("assets/guiafemm.png");
+	guiaFemmImg = loadImage("assets/guiafemm.png"); // Para niveles 1 y 2
+	guiaFemImg = loadImage("assets/guiafem.png"); // Para nivel 3
 	corteBg = loadImage("assets/supremacortefuera.png");
 	pasilloCorteImg = loadImage("assets/supremacortepasillo.png");
 	salaJuecesImg = loadImage("assets/supremacortenivel.png");
@@ -167,7 +175,7 @@ function preload() {
 	magistrada1Img = loadImage("assets/magistrada1.png");
 	magistrada2Img = loadImage("assets/magistrada2.png");
 	magistrada3Img = loadImage("assets/magistrada3.png");
-	gavelImg = loadImage("assets/mazo.png");
+	gavelImg = loadImage("assets/mazos.png");
 	
 	// Level 3 (Ejecutivo) assets - se crearán en setup()
 	// Trofeos - se crearán en setup()
@@ -580,6 +588,9 @@ function setup(){ // corre 1 vez, CARGAR SPRITES AQUÍ!!!
 	textAlign(CENTER);
 	rectMode(CENTER);
 	world.gravity.y = 9.81;
+	
+	// Disable automatic sprite drawing - we control it manually
+	allSprites.autoDraw = false;
 
 // inicio
 	naveInicio = new Sprite();
@@ -630,9 +641,7 @@ function setup(){ // corre 1 vez, CARGAR SPRITES AQUÍ!!!
 	pisoJardin = new Sprite(-5000, -5000, width, 20, "s");
 	pisoJardin.opacity = 0;
 	
-	// Create placeholder images for level 3
-	gavelImg = createPlaceholderImage(60, 60, color(139, 69, 19));
-	
+	// Load level 3 assets
 	palacioNacionalBg = loadImage("assets/palaciofuera.png");
 	pasilloNacionalImg = loadImage("assets/palaciopasillo.png");
 	despachoOvalImg = loadImage("assets/palaciooficina.png");
@@ -643,7 +652,7 @@ function setup(){ // corre 1 vez, CARGAR SPRITES AQUÍ!!!
 	guardHomImg = loadImage("assets/guardhom.png");
 	
 	trofeoPin = loadImage("assets/pinmexico.png");
-	trofeoMazo = createPlaceholderImage(40, 40, color(139, 69, 19));
+	trofeoMazo = loadImage("assets/mazos.png");
 	trofeoBanda = createPlaceholderImage(40, 40, color(0, 104, 71));
 	
 	// Screen 0 is drawn in update(), not here
@@ -742,7 +751,8 @@ function update(){ // corre en loop, AQUÍ VA LA LÓGICA DEL JUEGO
 	if (screen == 1.1){
 		botonContexto.pos = {x: width/2, y: height/2 + 100};
 		pantallaContexto();
-}
+		botonContexto.draw();
+	}
 	if (botonContexto.mouse.presses() && screen == 1.1){
 		botonContexto.pos = {x: -5000, y: -5000}; 
 		pisoJardin.pos = {x: width/2, y: height - 65};
@@ -761,7 +771,7 @@ function update(){ // corre en loop, AQUÍ VA LA LÓGICA DEL JUEGO
 		textAlign(CENTER);
 		uiText(30);
 		
-		// Draw sprites explicitly
+		// Draw sprites manually
 		if (zyro) zyro.draw();
 		if (otroAlien) otroAlien.draw();
 		
@@ -1435,11 +1445,11 @@ function drawGameOverScreen() {
 		image(zyroMuertoImg, width/2, height/2 - 60, 150, 150);
 		imageMode(CORNER);
 	}
-	fill('#00BCD4');
+	fill('#F44336');
 	textAlign(CENTER);
 	uiText(48);
 	text('¡Oh no, la jurisprudencia te venció!', width/2, height/2 + 120);
-	fill('#00BCD4');
+	fill('#F44336');
 	rect(width/2, height - 100, 260, 60, 16);
 	fill('white');
 	uiText(28);
@@ -1770,22 +1780,28 @@ function startBreakoutGame() {
 	breakoutPaddle.color = '#8B4513'; // Color café como un libro
 	breakoutPaddle.rotationLock = true;
 	
-	// Crear pelota (roja y circular)
+	// Crear pelota (roja y circular) con velocidad constante
 	if (breakoutBall) breakoutBall.remove();
-	breakoutBall = new Sprite(width/2, height - 70, 12, 'd');
-	breakoutBall.diameter = 12; // Hacer circular
+	breakoutBall = new Sprite(width/2, height - 70, 14, 'd');
+	breakoutBall.diameter = 14; // Hacer circular
 	breakoutBall.color = '#FF0000'; // Roja
-	breakoutBall.bounciness = 1;
+	breakoutBall.bounciness = 1; // Rebote elástico perfecto
 	breakoutBall.friction = 0;
-	breakoutBall.vel = {x: 2, y: -3};
+	breakoutBall.mass = 1;
 	breakoutBall.rotationLock = true;
+	breakoutBall.constantSpeed = 10; // Velocidad constante
+	// Iniciar con velocidad constante de 10
+	breakoutBall.vel = {x: 2, y: -2.2};
+	let speed = sqrt(breakoutBall.vel.x * breakoutBall.vel.x + breakoutBall.vel.y * breakoutBall.vel.y);
+	breakoutBall.vel.x *= breakoutBall.constantSpeed / speed;
+	breakoutBall.vel.y *= breakoutBall.constantSpeed / speed;
 	
-	// Crear bloques (10 filas x 10 columnas = 100 bloques)
+	// Crear bloques (10 filas x 10 columnas = 100 bloques) - más grandes
 	breakoutBlocks = [];
 	breakoutQuestionBlocks = [];
 	
-	let blockWidth = 70;
-	let blockHeight = 25;
+	let blockWidth = 75;
+	let blockHeight = 28;
 	let startX = (width - (blockWidth * 10)) / 2;
 	let startY = 80;
 	let colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#FF9999', '#66D9EF', '#A29BFE', '#FD79A8', '#FDCB6E'];
@@ -1810,7 +1826,7 @@ function startBreakoutGame() {
 		}
 	}
 	
-	// Seleccionar 10 bloques aleatorios (que no sean indestructibles) para preguntas
+	// Seleccionar 15 bloques aleatorios (que no sean indestructibles) para preguntas
 	let availableIndices = [];
 	for (let i = 0; i < breakoutBlocks.length; i++) {
 		if (!breakoutBlocks[i].isUnbreakable) {
@@ -1818,7 +1834,7 @@ function startBreakoutGame() {
 		}
 	}
 	
-	for (let i = 0; i < 10; i++) {
+	for (let i = 0; i < 15; i++) {
 		if (availableIndices.length === 0) break;
 		let randomIdx = floor(random(availableIndices.length));
 		let blockIdx = availableIndices[randomIdx];
@@ -1844,6 +1860,11 @@ function runBreakoutGame() {
 		background(60, 140, 240); // Fondo azul claro de respaldo
 	}
 	
+	// Desactivar gravedad en la pelota
+	if (breakoutBall) {
+		breakoutBall.gravityScale = 0;
+	}
+	
 	if (!breakoutGamePaused) {
 		// Control de la paleta (libro) con flechas
 		if (keyIsDown(LEFT_ARROW) && breakoutPaddle) {
@@ -1860,25 +1881,19 @@ function runBreakoutGame() {
 		}
 		
 		if (breakoutBall) {
-			// Rebote en paredes laterales
-			if (breakoutBall.x <= breakoutBall.width/2 || breakoutBall.x >= width - breakoutBall.width/2) {
-				breakoutBall.vel.x *= -1;
-				// Reducir velocidad en 0.5 al rebotar en paredes
+			// Normalizar velocidad constantemente para mantenerla en 10 (solo si no está pausado)
+			if (!breakoutGamePaused) {
 				let speed = sqrt(breakoutBall.vel.x * breakoutBall.vel.x + breakoutBall.vel.y * breakoutBall.vel.y);
-				let newSpeed = max(2, speed - 0.5);
-				let ratio = newSpeed / speed;
-				breakoutBall.vel.x *= ratio;
-				breakoutBall.vel.y *= ratio;
+				if (speed > 0.1) {
+					breakoutBall.vel.x *= breakoutBall.constantSpeed / speed;
+					breakoutBall.vel.y *= breakoutBall.constantSpeed / speed;
+				}
 			}
-			// Rebote en techo
-			if (breakoutBall.y <= breakoutBall.height/2) {
-				breakoutBall.vel.y *= -1;
-				// Reducir velocidad en 0.5 al rebotar en techo
-				let speed = sqrt(breakoutBall.vel.x * breakoutBall.vel.x + breakoutBall.vel.y * breakoutBall.vel.y);
-				let newSpeed = max(2, speed - 0.5);
-				let ratio = newSpeed / speed;
-				breakoutBall.vel.x *= ratio;
-				breakoutBall.vel.y *= ratio;
+			
+			// Rebote elástico en el suelo
+			if (breakoutBall.y >= height - breakoutBall.height/2) {
+				breakoutBall.vel.y = -abs(breakoutBall.vel.y);
+				breakoutBall.y = height - breakoutBall.height/2;
 			}
 		}
 		
@@ -1886,84 +1901,31 @@ function runBreakoutGame() {
 		if (breakoutBall && breakoutPaddle && breakoutBall.collides(breakoutPaddle)) {
 			// Calcular ángulo de rebote basado en dónde golpeó
 			let hitPos = (breakoutBall.x - breakoutPaddle.x) / (breakoutPaddle.width/2);
-			breakoutBall.vel.x = hitPos * 5;
+			breakoutBall.vel.x = hitPos * breakoutBall.constantSpeed * 0.8;
 			breakoutBall.vel.y = -abs(breakoutBall.vel.y);
-			// Incrementar velocidad en 0.8 con cada rebote en la paleta
-			let speed = sqrt(breakoutBall.vel.x * breakoutBall.vel.x + breakoutBall.vel.y * breakoutBall.vel.y);
-			let newSpeed = speed + 0.8;
-			let ratio = newSpeed / speed;
-				breakoutBall.vel.x *= ratio;
-				breakoutBall.vel.y *= ratio;
+			// Asegurar que la pelota no quede atrapada
+			breakoutBall.y = breakoutPaddle.y - breakoutPaddle.height/2 - breakoutBall.height/2 - 2;
 		}		// Colisión con bloques
 		for (let i = breakoutBlocks.length - 1; i >= 0; i--) {
 			let block = breakoutBlocks[i];
 			if (block && !block.removed && breakoutBall && !breakoutBall.removed) {
-				// Usar overlapping para detección más precisa
-				if (breakoutBall.overlaps(block)) {
+				// Usar collides para detección
+				if (breakoutBall.collides(block)) {
+					// TODOS los bloques rebotan automáticamente gracias a bounciness = 1
 					
-					// Calcular desde qué lado golpeó la pelota
-					let ballPrevX = breakoutBall.x - breakoutBall.vel.x;
-					let ballPrevY = breakoutBall.y - breakoutBall.vel.y;
-					
-					let blockLeft = block.x - block.width/2;
-					let blockRight = block.x + block.width/2;
-					let blockTop = block.y - block.height/2;
-					let blockBottom = block.y + block.height/2;
-					
-					// Determinar si golpeó horizontal o verticalmente
-					let fromLeft = ballPrevX < blockLeft;
-					let fromRight = ballPrevX > blockRight;
-					let fromTop = ballPrevY < blockTop;
-					let fromBottom = ballPrevY > blockBottom;
-					
-					// Rebotar según el lado
-					if (fromLeft || fromRight) {
-						breakoutBall.vel.x *= -1;
-						// Desplazar la pelota fuera del bloque
-						if (fromLeft) {
-							breakoutBall.x = blockLeft - breakoutBall.width/2 - 1;
-						} else {
-							breakoutBall.x = blockRight + breakoutBall.width/2 + 1;
-						}
-					} else {
-						breakoutBall.vel.y *= -1;
-						// Desplazar la pelota fuera del bloque
-						if (fromTop) {
-							breakoutBall.y = blockTop - breakoutBall.height/2 - 1;
-						} else {
-							breakoutBall.y = blockBottom + breakoutBall.height/2 + 1;
-						}
+				// Si es bloque de pregunta, eliminarlo y mostrar pregunta DESPUÉS del rebote
+				if (block.isQuestionBlock) {
+					// Guardar velocidad actual de la pelota
+					if (breakoutBall) {
+						breakoutSavedVelocity.x = breakoutBall.vel.x;
+						breakoutSavedVelocity.y = breakoutBall.vel.y;
+						// Detener la pelota
+						breakoutBall.vel.x = 0;
+						breakoutBall.vel.y = 0;
 					}
 					
-					// Reducir velocidad en 0.5 al golpear bloques
-					let speed = sqrt(breakoutBall.vel.x * breakoutBall.vel.x + breakoutBall.vel.y * breakoutBall.vel.y);
-					let newSpeed = max(2, speed - 0.5);
-					let ratio = newSpeed / speed;
-					breakoutBall.vel.x *= ratio;
-					breakoutBall.vel.y *= ratio;
-					
-					// Si el bloque es indestructible, solo rebotar (ya rebotó arriba)
-					if (block.isUnbreakable) {
-						break; // Salir del loop para evitar múltiples colisiones en el mismo frame
-					}
-					
-					if (block.isQuestionBlock) {
-						// Bloque de pregunta - pausar y mostrar pregunta
-						breakoutGamePaused = true;
-						
-						// Ocultar la pelota durante la pregunta
-						if (breakoutBall) {
-							breakoutBall.pos = {x: -5000, y: -5000};
-							breakoutBall.vel = {x: 0, y: 0};
-						}
-						
-						// Guardar posición del bloque para regenerarlo
-						let blockX = block.x;
-						let blockY = block.y;
-						let blockW = block.width;
-						let blockH = block.height;
-						
-						// Seleccionar pregunta no usada
+					// Bloque de pregunta - pausar y mostrar pregunta
+					breakoutGamePaused = true;						// Seleccionar pregunta no usada
 						let availableQuestions = [];
 						for (let idx = 0; idx < judicialQuestions.length; idx++) {
 							if (!questionsAsked.includes(idx)) {
@@ -1992,49 +1954,27 @@ function runBreakoutGame() {
 							questionsAsked.push(selected.originalIndex);
 						}
 						
-						// Remover bloque viejo
+						// Remover bloque de pregunta (no se regenera)
 						if (block && !block.removed) {
 							block.remove();
 						}
 						breakoutBlocks.splice(i, 1);
-						
-						// Crear nuevo bloque de pregunta en la misma posición
-						let newBlock = new Sprite(blockX, blockY, blockW, blockH, 's');
-						newBlock.color = '#7FFF00'; // Verde manzana
-						newBlock.isQuestionBlock = true;
-						newBlock.text = '?';
-						newBlock.textSize = 20;
-						newBlock.textColor = 'white';
-						breakoutBlocks.push(newBlock);
 					} else {
-						// Bloque normal - solo remover
-						if (block && !block.removed) {
-							block.remove();
+						// Bloques normales e indestructibles - rebotan automáticamente
+						
+						// Si el bloque NO es indestructible, destruirlo DESPUÉS de rebotar
+						if (!block.isUnbreakable) {
+							if (block && !block.removed) {
+								block.remove();
+							}
+							breakoutBlocks.splice(i, 1);
 						}
-						breakoutBlocks.splice(i, 1);
 					}
+					break; // Solo procesar una colisión por frame
 				}
 			}
 		}
-		
-		// Perder vida si la pelota cae al fondo
-		if (breakoutBall && breakoutBall.y > height + 20) {
-			levelTwoHealth--;
-			if (levelTwoHealth <= 0) {
-				// Game Over
-				cleanupBreakout();
-				if (crasheo) crasheo.play();
-				nivelDosPhase = 99;
-			} else {
-				// Resetear pelota
-				breakoutBall.x = width/2;
-				breakoutBall.y = height - 70;
-				breakoutBall.vel = {x: 2, y: -3};
-			}
-		}
-	} // Fin de if (!breakoutGamePaused)
-	
-	// Dibujar sprites SIEMPRE (incluso si está pausado)
+	} // Fin de if (!breakoutGamePaused)	// Dibujar sprites SIEMPRE (incluso si está pausado)
 	if (breakoutPaddle && !breakoutPaddle.removed) breakoutPaddle.draw();
 	if (breakoutBall && !breakoutBall.removed) breakoutBall.draw();
 	for (let block of breakoutBlocks) {
@@ -2096,11 +2036,11 @@ function drawGameOverDos() {
 		image(zyroMuertoImg, width/2, height/2 - 60, 150, 150);
 		imageMode(CORNER);
 	}
-	fill('#00BCD4');
+	fill('#DAA520');
 	textAlign(CENTER);
 	uiText(48);
 	text('¡Oh no, te cayó todo el peso de la ley!', width/2, height/2 + 120);
-	fill('#00BCD4');
+	fill('#DAA520');
 	rect(width/2, height - 100, 260, 60, 16);
 	fill('white');
 	uiText(28);
@@ -2169,16 +2109,15 @@ function startSalaJueces() {
 		{ who: 'zyro', text: 'Ooooohhh... muy elegante, veo que hay ministros aquí, pero mira ese mazo...' }
 	];
 	
-	// Crear sprite del mazo (95px más abajo y 110px a la izquierda del centro)
+	// Crear sprite del mazo (87px más abajo y 110px a la izquierda del centro)
 	if (gavelSprite) gavelSprite.remove();
-	gavelSprite = new Sprite(width/2 - 110, height/2 + 95, 60, 60, 's');
+	gavelSprite = new Sprite(width/2 - 110, height/2 + 87, 200, 200, 's');
 	gavelSprite.rotationLock = true;
 	gavelSprite.color = color(139, 69, 19); // Color café/marrón por defecto
-	// Si hay imagen de mazo, usarla
+	// Si hay imagen de mazo, usarla con escala apropiada
 	if (gavelImg) {
 		gavelSprite.image = gavelImg;
-		gavelSprite.w = 60;
-		gavelSprite.h = 60;
+		gavelSprite.scale = 0.48; // Escala para aproximadamente 200x200px
 	}
 }
 
@@ -2250,16 +2189,21 @@ function crearJueces() {
 }
 
 function drawVictoryDos() {
-	// Fondo azul claro (gradiente)
-	for (let i = 0; i < height; i++) {
-		let inter = map(i, 0, height, 0, 1);
-		let c = lerpColor(color(135, 206, 250), color(173, 216, 230), inter);
-		stroke(c);
-		line(0, i, width, i);
+	// Usar fondo borroso nivel2borroso.png
+	if (nivel2BorrosoImg && nivel2BorrosoImg.width > 1) {
+		image(nivel2BorrosoImg, 0, 0, width, height);
+	} else {
+		// Fondo azul claro de respaldo (gradiente)
+		for (let i = 0; i < height; i++) {
+			let inter = map(i, 0, height, 0, 1);
+			let c = lerpColor(color(135, 206, 250), color(173, 216, 230), inter);
+			stroke(c);
+			line(0, i, width, i);
+		}
 	}
 	noStroke();
 	
-	fill('#333333');
+	fill('white');
 	textAlign(CENTER);
 	uiText(48);
 	text('¡Felicidades!', width/2, height/2 - 100);
@@ -2303,12 +2247,12 @@ function startNivelTres() {
 	// Quitar suelo
 	if (pisoJardin) pisoJardin.pos = {x: -5000, y: -5000};
 	
-	// Posicionar a Zyro y otroAlien juntos
-	zyro.pos = { x: width/2 - 100, y: height - 140 };
+	// Posicionar a Zyro y otroAlien juntos en el borde inferior
+	zyro.pos = { x: width/2 - 100, y: height - 80 };
 	zyro.scale = 0.7;
 	zyro.visible = true;
 	
-	otroAlien.pos = { x: width/2 + 50, y: height - 130 };
+	otroAlien.pos = { x: width/2 + 50, y: height - 70 };
 	otroAlien.scale = 0.7;
 	otroAlien.visible = true;
 	
@@ -2389,25 +2333,49 @@ function nivelTresLoop() {
 function startInteriorPalacio() {
 	nivelTresPhase = 2;
 	nivelTresDialogIndex = 0;
-	nivelTresDialogActive = false;
+	nivelTresDialogActive = true; // Iniciar diálogo automáticamente
 	
-	// Reposicionar sprites: Zyro y otroAlien a la derecha, guías a la izquierda
-	zyro.pos = { x: width - 250, y: height - 140 };
+	// Reposicionar sprites: Zyro y otroAlien en el centro, Zyro atrás de otroAlien
+	zyro.pos = { x: width/2 + 20, y: height - 100 }; // Zyro atrás (más arriba)
 	zyro.image = zyroIdleLeft; // Viendo hacia la izquierda
+	zyro.scale = 0.7;
+	zyro.visible = true;
 	
-	otroAlien.pos = { x: width - 150, y: height - 130 };
-	otroAlien.image = otroAlienIdleLeft || otroAlienIdle; // Viendo hacia la izquierda
+	otroAlien.pos = { x: width/2 - 30, y: height - 70 }; // otroAlien adelante (más abajo)
+	otroAlien.image = "assets/otroAlien.png";
+	otroAlien.scale = 0.7;
+	otroAlien.visible = true;
 	
-	// Crear guías a la izquierda (reusa sprites del nivel 1 y 2)
+	// Crear guías a la izquierda
 	if (nivelUnoGuide) nivelUnoGuide.remove();
-	nivelUnoGuide = new Sprite(200, height - 150, 60, 150, 's');
-	nivelUnoGuide.image = tourguideLeftImg;
+	nivelUnoGuide = new Sprite(200, height - 80, 60, 150, 's');
+	if (tourguideLeftImg) {
+		nivelUnoGuide.image = tourguideLeftImg;
+	}
 	nivelUnoGuide.scale = 0.22;
 	
 	if (nivelDosGuide) nivelDosGuide.remove();
-	nivelDosGuide = new Sprite(350, height - 150, 60, 150, 's');
-	nivelDosGuide.image = guiaFemmImg;
+	nivelDosGuide = new Sprite(350, height - 80, 60, 150, 's');
+	if (guiaFemImg) {
+		nivelDosGuide.image = guiaFemImg;
+	}
 	nivelDosGuide.scale = 0.22;
+	
+	// Diálogos con los guías (se activan automáticamente)
+	nivelTresDialog = [
+		{ who: 'guia', text: '¡Pero si es Zyro! ¡Llegaste hasta acá!' },
+		{ who: 'guia', text: 'Nos tomamos un descanso para ver si llegabas.' },
+		{ who: 'zyro', text: 'Sí, aquí estoy con mi amigo.' },
+		{ who: 'guia', text: 'Este es el Palacio Nacional, sede del Poder Ejecutivo.' },
+		{ who: 'guia', text: 'El Presidente de México vive y trabaja aquí.' },
+		{ who: 'guia', text: 'Él es el jefe del Estado y del gobierno.' },
+		{ who: 'guia', text: 'Su mandato dura 6 años y no puede reelegirse.' },
+		{ who: 'guia', text: 'Sus funciones incluyen ejecutar las leyes que aprueba el Congreso.' },
+		{ who: 'guia', text: 'También dirige la política exterior y es comandante de las Fuerzas Armadas.' },
+		{ who: 'guia', text: 'Nombra a secretarios de Estado y otros funcionarios importantes.' },
+		{ who: 'guia', text: '¿Quieren explorar el lugar?' },
+		{ who: 'otro', text: '¡Sí, por favor! Siempre he querido conocer el Palacio.' }
+	];
 }
 
 function runInteriorPalacio() {
@@ -2427,28 +2395,6 @@ function runInteriorPalacio() {
 	// Permitir movimiento de Zyro si no hay diálogo activo
 	if (!nivelTresDialogActive && !agenteSecreto) {
 		controlesZyroBase();
-	}
-	
-	// Iniciar diálogo cuando Zyro se acerca a los guías
-	if (!nivelTresDialogActive && !nivelTresTourAccepted && nivelUnoGuide) {
-		let dx = abs(zyro.pos.x - nivelUnoGuide.pos.x);
-		if (dx < 150) {
-			nivelTresDialogActive = true;
-			nivelTresDialog = [
-				{ who: 'guia', text: '¡Pero si es Zyro! ¡Llegaste hasta acá!' },
-				{ who: 'guia', text: 'Nos tomamos un descanso para ver si llegabas.' },
-				{ who: 'zyro', text: 'Sí, aquí estoy con mi amigo.' },
-				{ who: 'guia', text: 'Este es el Palacio Nacional, sede del Poder Ejecutivo.' },
-				{ who: 'guia', text: 'El Presidente de México vive y trabaja aquí.' },
-				{ who: 'guia', text: 'Él es el jefe del Estado y del gobierno.' },
-				{ who: 'guia', text: 'Su mandato dura 6 años y no puede reelegirse.' },
-				{ who: 'guia', text: 'Sus funciones incluyen ejecutar las leyes que aprueba el Congreso.' },
-				{ who: 'guia', text: 'También dirige la política exterior y es comandante de las Fuerzas Armadas.' },
-				{ who: 'guia', text: 'Nombra a secretarios de Estado y otros funcionarios importantes.' },
-				{ who: 'guia', text: '¿Quieren explorar el lugar?' },
-				{ who: 'otro', text: '¡Sí, por favor! Siempre he querido conocer el Palacio.' }
-			];
-		}
 	}
 	
 	// Mostrar diálogo
@@ -2701,8 +2647,14 @@ function runPongInterRoundDialog() {
 					
 					createEnemyPaddle();
 					resetPongBall();
-					selectPongQuestion();
-					pongTimer = pongTimerMax;
+					
+					// Resetear temporizadores para nueva ronda
+					pongGameTimer = 0;
+					pongQuestionTriggered = false;
+					pongQuestionActive = false;
+					pongStunnedZyro = false;
+					pongStunnedEnemy = false;
+					pongStunTimer = 0;
 				}
 			}
 		}
@@ -2717,6 +2669,12 @@ function startPongGame() {
 	pongLives = 3;
 	pongTarget = 5; // Primera ronda a 5 puntos
 	pongInterRoundDialog = false;
+	pongGameTimer = 0; // Resetear temporizador de juego
+	pongQuestionTriggered = false; // No se ha activado pregunta
+	pongQuestionActive = false;
+	pongStunnedZyro = false;
+	pongStunnedEnemy = false;
+	pongStunTimer = 0;
 	
 	// Limpiar sprites de la oficina
 	if (agenteSecreto) {
@@ -2725,6 +2683,34 @@ function startPongGame() {
 	if (alipresi) {
 		alipresi.pos = { x: -5000, y: -5000 };
 	}
+	
+	// Crear sprites de guardias en el fondo (fase 3)
+	// Estos se mostrarán u ocultarán según la ronda
+	if (guardFemSprite) guardFemSprite.remove();
+	guardFemSprite = new Sprite(150, height - 100, 's');
+	guardFemSprite.w = 100;
+	guardFemSprite.h = 150;
+	if (guardFemImg) {
+		guardFemSprite.image = guardFemImg;
+		guardFemSprite.scale = 0.5;
+	} else {
+		guardFemSprite.color = color(0, 0, 0);
+	}
+	guardFemSprite.rotationLock = true;
+	guardFemSprite.visible = (pongRound >= 2); // Visible en rondas 2 y 3
+	
+	if (guardHomSprite) guardHomSprite.remove();
+	guardHomSprite = new Sprite(width - 150, height - 100, 's');
+	guardHomSprite.w = 100;
+	guardHomSprite.h = 150;
+	if (guardHomImg) {
+		guardHomSprite.image = guardHomImg;
+		guardHomSprite.scale = 0.5;
+	} else {
+		guardHomSprite.color = color(0, 0, 0);
+	}
+	guardHomSprite.rotationLock = true;
+	guardHomSprite.visible = (pongRound >= 3); // Visible solo en ronda 3
 	
 	// Crear pelota de pong (roja)
 	if (pongBall) pongBall.remove();
@@ -2742,13 +2728,8 @@ function startPongGame() {
 	pongPaddleZyro.color = color(127, 255, 0); // #7FFF00 lime green
 	pongPaddleZyro.rotationLock = true;
 	
-	// Crear paddle enemigo (negro para agentes, rojo para presidente)
+	// Crear paddle enemigo (negro para agentes, imagen para presidente)
 	createEnemyPaddle();
-	
-	// Iniciar primera pregunta
-	pongQuestionActive = true;
-	pongTimer = pongTimerMax;
-	selectPongQuestion();
 }
 
 function createEnemyPaddle() {
@@ -2756,29 +2737,28 @@ function createEnemyPaddle() {
 	pongPaddleEnemy = new Sprite(width - 30, height/2, 15, 100, 's');
 	
 	if (pongRound === 1) {
-		// Primera ronda - guardia femenina
-		if (guardFemImg) {
-			pongPaddleEnemy.image = guardFemImg;
-			pongPaddleEnemy.scale = 0.15;
-		} else {
-			pongPaddleEnemy.color = color(0, 0, 0); // Fallback negro
-		}
+		// Primera ronda - guardia femenina (paleta negra)
+		pongPaddleEnemy.color = color(0, 0, 0);
+		// Mostrar guardia femenina en el fondo
+		if (guardFemSprite) guardFemSprite.visible = false; // No mostrar en ronda 1
+		if (guardHomSprite) guardHomSprite.visible = false; // No mostrar en ronda 1
 	} else if (pongRound === 2) {
-		// Segunda ronda - guardia masculino
-		if (guardHomImg) {
-			pongPaddleEnemy.image = guardHomImg;
-			pongPaddleEnemy.scale = 0.15;
-		} else {
-			pongPaddleEnemy.color = color(0, 0, 0); // Fallback negro
-		}
+		// Segunda ronda - guardia masculino (paleta negra)
+		pongPaddleEnemy.color = color(0, 0, 0);
+		// Mostrar guardia femenina en el fondo (ya fue derrotada)
+		if (guardFemSprite) guardFemSprite.visible = true;
+		if (guardHomSprite) guardHomSprite.visible = false; // No mostrar aún
 	} else if (pongRound === 3) {
-		// Tercera ronda - presidente
+		// Tercera ronda - presidente (con imagen)
 		if (alienMaloImg) {
 			pongPaddleEnemy.image = alienMaloImg;
 			pongPaddleEnemy.scale = 0.15;
 		} else {
 			pongPaddleEnemy.color = color(255, 0, 0); // Fallback rojo
 		}
+		// Mostrar ambos guardias en el fondo (ambos derrotados)
+		if (guardFemSprite) guardFemSprite.visible = true;
+		if (guardHomSprite) guardHomSprite.visible = true;
 	}
 	pongPaddleEnemy.rotationLock = true;
 }
@@ -2810,82 +2790,21 @@ function runPongGame() {
 	}
 	pop();
 	
-	// Dibujar sprites
+	// Dibujar sprites de guardias en el fondo
+	if (guardFemSprite && guardFemSprite.visible) guardFemSprite.draw();
+	if (guardHomSprite && guardHomSprite.visible) guardHomSprite.draw();
+	
+	// Dibujar sprites del juego
 	if (pongBall) pongBall.draw();
 	if (pongPaddleZyro) pongPaddleZyro.draw();
 	if (pongPaddleEnemy) pongPaddleEnemy.draw();
 	
-	// Control del paddle de Zyro (si no está stunned)
-	if (!pongStunnedZyro && pongPaddleZyro) {
-		if (keyIsDown(UP_ARROW) && pongPaddleZyro.y > 50) {
-			pongPaddleZyro.y -= 6;
-		}
-		if (keyIsDown(DOWN_ARROW) && pongPaddleZyro.y < height - 50) {
-			pongPaddleZyro.y += 6;
-		}
-	}
-	
-	// IA simple del enemigo (si no está stunned)
-	if (!pongStunnedEnemy && pongPaddleEnemy && pongBall) {
-		if (pongBall.y < pongPaddleEnemy.y - 10) {
-			pongPaddleEnemy.y -= 4;
-		} else if (pongBall.y > pongPaddleEnemy.y + 10) {
-			pongPaddleEnemy.y += 4;
-		}
-	}
-	
-	// Rebote en techo y piso
-	if (pongBall) {
-		if (pongBall.y < 10 || pongBall.y > height - 10) {
-			pongBall.vel.y *= -1;
-		}
-		
-		// Rebote en paddles
-		if (pongBall.collides(pongPaddleZyro)) {
-			pongBall.vel.x = abs(pongBall.vel.x);
-			let offset = (pongBall.y - pongPaddleZyro.y) / 50;
-			pongBall.vel.y = offset * 5;
-		}
-		if (pongBall.collides(pongPaddleEnemy)) {
-			pongBall.vel.x = -abs(pongBall.vel.x);
-			let offset = (pongBall.y - pongPaddleEnemy.y) / 50;
-			pongBall.vel.y = offset * 5;
-		}
-		
-		// Detectar goles
-		if (pongBall.x < 0) {
-			// Gol del enemigo
-			pongScoreEnemy++;
-			resetPongBall();
-		} else if (pongBall.x > width) {
-			// Gol de Zyro
-			pongScoreZyro++;
-			resetPongBall();
-		}
-	}
-	
-	// Mostrar marcador
-	push();
-	fill(255);
-	uiText(32);
-	textAlign(CENTER);
-	text(pongScoreZyro + ' - ' + pongScoreEnemy, width/2, 40);
-	pop();
-	
-	// Mostrar vidas
-	push();
-	fill(127, 255, 0);
-	uiText(20);
-	textAlign(LEFT);
-	text('Vidas: ' + pongLives, 20, 40);
-	pop();
-	
 	// Sistema de preguntas con timer
 	if (pongQuestionActive) {
-		// Contar el tiempo
-		pongTimer -= deltaTime / 1000; // deltaTime está en milisegundos
+		// MODO PREGUNTA: Pausar pelota, contar tiempo de respuesta
+		pongTimer -= deltaTime / 1000;
 		
-		// Mostrar timer
+		// Mostrar timer de pregunta
 		push();
 		fill(255);
 		uiText(40);
@@ -2921,6 +2840,106 @@ function runPongGame() {
 		if (pongTimer <= 0) {
 			handleWrongAnswer();
 		}
+	} else {
+		// MODO JUEGO: Temporizador que cuenta hacia arriba
+		pongGameTimer += deltaTime / 1000;
+		
+		// Actualizar temporizador de atontamiento
+		if (pongStunnedZyro || pongStunnedEnemy) {
+			pongStunTimer -= deltaTime / 1000;
+			if (pongStunTimer <= 0) {
+				pongStunnedZyro = false;
+				pongStunnedEnemy = false;
+			}
+		}
+		
+		// Control del paddle de Zyro (si no está stunned)
+		if (!pongStunnedZyro && pongPaddleZyro) {
+			if (keyIsDown(UP_ARROW) && pongPaddleZyro.y > 50) {
+				pongPaddleZyro.y -= 6;
+			}
+			if (keyIsDown(DOWN_ARROW) && pongPaddleZyro.y < height - 50) {
+				pongPaddleZyro.y += 6;
+			}
+		}
+		
+		// IA simple del enemigo (si no está stunned)
+		if (!pongStunnedEnemy && pongPaddleEnemy && pongBall) {
+			if (pongBall.y < pongPaddleEnemy.y - 10) {
+				pongPaddleEnemy.y -= 4;
+			} else if (pongBall.y > pongPaddleEnemy.y + 10) {
+				pongPaddleEnemy.y += 4;
+			}
+		}
+		
+		// Rebote en techo y piso
+		if (pongBall) {
+			if (pongBall.y < 10 || pongBall.y > height - 10) {
+				pongBall.vel.y *= -1;
+			}
+			
+			// Rebote en paddles
+			if (pongBall.collides(pongPaddleZyro)) {
+				pongBall.vel.x = abs(pongBall.vel.x);
+				let offset = (pongBall.y - pongPaddleZyro.y) / 50;
+				pongBall.vel.y = offset * 5;
+			}
+			if (pongBall.collides(pongPaddleEnemy)) {
+				pongBall.vel.x = -abs(pongBall.vel.x);
+				let offset = (pongBall.y - pongPaddleEnemy.y) / 50;
+				pongBall.vel.y = offset * 5;
+			}
+			
+			// Detectar goles
+			if (pongBall.x < 0) {
+				// Gol del enemigo
+				pongScoreEnemy++;
+				resetPongBall();
+			} else if (pongBall.x > width) {
+				// Gol de Zyro
+				pongScoreZyro++;
+				resetPongBall();
+			}
+		}
+		
+		// Activar pregunta cada 10 segundos
+		if (pongGameTimer >= 10 && !pongQuestionTriggered) {
+			pongQuestionTriggered = true;
+			pongQuestionActive = true;
+			pongTimer = pongTimerMax;
+			selectPongQuestion();
+			// Pausar pelota
+			if (pongBall) {
+				pongBall.vel.x = 0;
+				pongBall.vel.y = 0;
+			}
+		}
+	}
+	
+	// Mostrar marcador
+	push();
+	fill(255);
+	uiText(32);
+	textAlign(CENTER);
+	text(pongScoreZyro + ' - ' + pongScoreEnemy, width/2, 40);
+	pop();
+	
+	// Mostrar vidas
+	push();
+	fill(127, 255, 0);
+	uiText(20);
+	textAlign(LEFT);
+	text('Vidas: ' + pongLives, 20, 40);
+	pop();
+	
+	// Mostrar temporizador de juego (cuando no hay pregunta)
+	if (!pongQuestionActive) {
+		push();
+		fill(255, 255, 0);
+		uiText(16);
+		textAlign(RIGHT);
+		text('Tiempo: ' + Math.floor(pongGameTimer) + 's', width - 20, 40);
+		pop();
 	}
 	
 	// Verificar victoria o derrota
@@ -2968,25 +2987,45 @@ function resetPongBall() {
 		pongBall.vel = { x: random([-4, 4]), y: random(-3, 3) };
 		pongStunnedZyro = false;
 		pongStunnedEnemy = false;
-		pongQuestionActive = true;
-		pongTimer = pongTimerMax;
-		selectPongQuestion();
+		pongStunTimer = 0;
+		pongGameTimer = 0; // Resetear temporizador de juego
+		pongQuestionTriggered = false; // Permitir nueva pregunta
 	}
 }
 
 function handleCorrectAnswer() {
-	// Enemigo stunned, deja pasar la pelota
+	// Enemigo stunned por 3 segundos
 	pongStunnedEnemy = true;
+	pongStunTimer = 3;
 	pongQuestionActive = false;
 	pongCurrentQuestion = null;
+	
+	// Relanzar pelota hacia el enemigo
+	if (pongBall) {
+		pongBall.vel = { x: 4, y: random(-3, 3) };
+	}
+	
+	// Resetear temporizadores
+	pongGameTimer = 0;
+	pongQuestionTriggered = false;
 }
 
 function handleWrongAnswer() {
-	// Zyro stunned, deja pasar la pelota y pierde una vida
+	// Zyro stunned por 3 segundos y pierde una vida
 	pongStunnedZyro = true;
+	pongStunTimer = 3;
 	pongQuestionActive = false;
 	pongCurrentQuestion = null;
 	pongLives--;
+	
+	// Relanzar pelota hacia Zyro
+	if (pongBall) {
+		pongBall.vel = { x: -4, y: random(-3, 3) };
+	}
+	
+	// Resetear temporizadores
+	pongGameTimer = 0;
+	pongQuestionTriggered = false;
 }
 
 function displayNivel3WinScreen() {
@@ -3024,9 +3063,9 @@ function displayNivel3WinScreen() {
 	
 	if (keyIsDown(82)) { // R key
 		levelThreeCompleted = true; // Marcar nivel 3 como completado
+		if (!completedLevels.includes(2)) completedLevels.push(2);
 		cleanupPong();
 		returnToGarden();
-		levelBoxes[2].unlocked = false; // Desbloquear próximo nivel si existe
 		showReturnDialog = true;
 	}
 }
@@ -3076,6 +3115,14 @@ function cleanupPong() {
 	if (pongPaddleEnemy && !pongPaddleEnemy.removed) {
 		pongPaddleEnemy.remove();
 		pongPaddleEnemy = null;
+	}
+	if (guardFemSprite && !guardFemSprite.removed) {
+		guardFemSprite.remove();
+		guardFemSprite = null;
+	}
+	if (guardHomSprite && !guardHomSprite.removed) {
+		guardHomSprite.remove();
+		guardHomSprite = null;
 	}
 	pongQuestionActive = false;
 	pongCurrentQuestion = null;
@@ -3234,37 +3281,34 @@ function keyPressed(){
 		
 		if (answer >= 0 && answer < 4) {
 			if (answer === currentQuestion.correct) {
-				// Respuesta correcta - incrementar progreso
+				// Respuesta correcta
 				breakoutQuestionsAnswered++;
+				breakoutGamePaused = false;
+				currentQuestion = null;
+				// Restaurar velocidad guardada
+				if (breakoutBall) {
+					breakoutBall.vel.x = breakoutSavedVelocity.x;
+					breakoutBall.vel.y = breakoutSavedVelocity.y;
+				}
 			} else {
-				// Respuesta incorrecta - quitar vida
+				// Respuesta incorrecta
 				levelTwoHealth--;
+				breakoutGamePaused = false;
+				currentQuestion = null;
+				
 				if (levelTwoHealth <= 0) {
+					// Game Over
 					cleanupBreakout();
 					if (crasheo) crasheo.play();
 					nivelDosPhase = 99;
+				} else {
+					// Continuar jugando - restaurar velocidad
+					if (breakoutBall) {
+						breakoutBall.vel.x = breakoutSavedVelocity.x;
+						breakoutBall.vel.y = breakoutSavedVelocity.y;
+					}
 				}
 			}
-			
-			breakoutGamePaused = false;
-			currentQuestion = null;
-			
-			// Lanzar nueva pelota después de responder
-			if (breakoutBall && !breakoutBall.removed) {
-				breakoutBall.pos = {x: width/2, y: height - 70};
-				breakoutBall.vel = {x: random(-2, 2), y: -3};
-				breakoutBall.visible = true;
-			} else {
-				// Si la pelota fue removida, crear una nueva
-				breakoutBall = new Sprite(width/2, height - 70, 12, 'd');
-				breakoutBall.diameter = 12;
-				breakoutBall.color = '#FF0000';
-				breakoutBall.bounciness = 1;
-				breakoutBall.friction = 0;
-				breakoutBall.vel = {x: random(-2, 2), y: -3};
-				breakoutBall.rotationLock = true;
-			}
-			
 			return false;
 		}
 	}
