@@ -97,20 +97,36 @@ let nivelTresDialogActive = false;
 let nivelTresGuide = null;
 let nivelTresTourAccepted = false;
 let levelThreeCompleted = false;
-let palacioNacionalBg, pasilloNacionalImg, despachoOvalImg;
+let palacioNacionalBg, pasilloNacionalImg, despachoOvalImg, palacioBorrosoImg, bandaPresidencialImg;
 let presidenteSprite, agente1Sprite, agente2Sprite;
+let agenteSecreto = null; // agente del servicio secreto
+let alipresi = null; // presidente alienígena antagonista
+let alienMaloImg; // imagen del presidente malo
+let guardFemImg, guardHomImg; // imágenes de los guardias
 let viejoSprite = null; // el viejo acompaña en nivel 3
 let pongBall, pongPaddleZyro, pongPaddleEnemy;
 let pongScoreZyro = 0, pongScoreEnemy = 0;
-let pongTarget = 3; // puntos necesarios
+let pongTarget = 5; // puntos necesarios (cambia por ronda: 5, 4, 3)
 let pongRound = 1; // 1=agente1, 2=agente2, 3=presidente
 let ejecutivoQuestions = [];
 let pongQuestionActive = false;
 let pongCurrentQuestion = null;
+let pongTimer = 0;
+let pongTimerMax = 10; // 10 segundos por pregunta
+let pongStunnedZyro = false;
+let pongStunnedEnemy = false;
+let pongLives = 3; // vidas de Zyro
+let pongInterRoundDialog = false;
+let pongInterRoundIndex = 0;
+let pongInterRoundMessages = [];
 // Trofeos
 let trofeoPin, trofeoMazo, trofeoBanda;
 let showReturnDialog = false;
 let returnDialogIndex = 0;
+let showFinalDialog = false;
+let finalDialogIndex = 0;
+let finalDialogMessages = [];
+let showCredits = false;
 
 // Preload assets
 function preload() {
@@ -204,7 +220,22 @@ function createPlaceholderImage(w, h, col) {
 // Dialogue & Level helper functions
 function initializeDialogue() {
 	// Check if returning after completing a level
-	if (levelOneCompleted && !levelTwoCompleted && !levelThreeCompleted) {
+	if (levelOneCompleted && levelTwoCompleted && levelThreeCompleted) {
+		// Returning after completing all 3 levels - final dialogue
+		showFinalDialog = true;
+		finalDialogIndex = 0;
+		finalDialogMessages = [
+			{ speaker: 'otro', text: 'Zyro, ¡felicidades! ¡Completaste los 3 poderes!' },
+			{ speaker: 'zyro', text: 'Gracias amigo, no hubiera podido ser posible sin ti.' },
+			{ speaker: 'zyro', text: 'Aprendí mucho y ahora estoy listo para regresar a la luna.' },
+			{ speaker: 'otro', text: 'Espera... ¿qué no querías conquistar el mundo?' },
+			{ speaker: 'zyro', text: 'No, vi que las leyes no son lo mío.' },
+			{ speaker: 'zyro', text: 'Prefiero admirar la Tierra desde la luna.' },
+			{ speaker: 'otro', text: 'Me parece bien. Luego te visitaré.' },
+			{ speaker: 'otro', text: '¡Buen viaje!' }
+		];
+		return; // Don't set dialogueActive, we'll handle this separately
+	} else if (levelOneCompleted && !levelTwoCompleted && !levelThreeCompleted) {
 		// Returning after level 1
 		dialogueArray = [
 			{ speaker: 'otro', text: '¡Zyro! ¿Realmente fuiste y lo hiciste?' },
@@ -602,9 +633,14 @@ function setup(){ // corre 1 vez, CARGAR SPRITES AQUÍ!!!
 	// Create placeholder images for level 3
 	gavelImg = createPlaceholderImage(60, 60, color(139, 69, 19));
 	
-	palacioNacionalBg = createPlaceholderImage(width, height, color(20, 80, 180));
-	pasilloNacionalImg = createPlaceholderImage(width, height, color(35, 110, 200));
-	despachoOvalImg = createPlaceholderImage(width, height, color(45, 130, 220));
+	palacioNacionalBg = loadImage("assets/palaciofuera.png");
+	pasilloNacionalImg = loadImage("assets/palaciopasillo.png");
+	despachoOvalImg = loadImage("assets/palaciooficina.png");
+	palacioBorrosoImg = loadImage("assets/palacioborroso.png");
+	bandaPresidencialImg = loadImage("assets/bandapresidencial.png");
+	alienMaloImg = loadImage("assets/alienmalo.png");
+	guardFemImg = loadImage("assets/guardfem.png");
+	guardHomImg = loadImage("assets/guardhom.png");
 	
 	trofeoPin = loadImage("assets/pinmexico.png");
 	trofeoMazo = createPlaceholderImage(40, 40, color(139, 69, 19));
@@ -621,6 +657,18 @@ function draw(){
 }
 
 function update(){ // corre en loop, AQUÍ VA LA LÓGICA DEL JUEGO
+	// Credits screen
+	if (showCredits) {
+		background(0);
+		push();
+		fill(255);
+		uiText(60);
+		textAlign(CENTER, CENTER);
+		text('Gracias por jugar', width/2, height/2);
+		pop();
+		return;
+	}
+	
 	// centralized ENTER handling: remember single presses for a short window
 	let enterDown = keyIsDown(ENTER);
 	let enterEdge = enterDown && !prevEnterDown;
@@ -745,6 +793,24 @@ function update(){ // corre en loop, AQUÍ VA LA LÓGICA DEL JUEGO
 					levelBoxes.push({temp: true}); // Temporary marker
 				}
 				initializeDialogue(); // This function now handles different dialogues based on completed levels
+			}
+		}
+
+		// Final dialogue after completing all 3 levels
+		if (showFinalDialog) {
+			// Set dialogueArray for the current message
+			dialogueArray = finalDialogMessages;
+			currentDialogueIndex = finalDialogIndex;
+			
+			displayDialogue();
+			if (enterBuffer > 0) {
+				finalDialogIndex++;
+				enterBuffer = 0;
+				if (finalDialogIndex >= finalDialogMessages.length) {
+					// Show credits screen
+					showFinalDialog = false;
+					showCredits = true;
+				}
 			}
 		}
 
@@ -1093,7 +1159,10 @@ function drawLevelDialog(entry) {
 		'guia': '#FF9800',
 		'senator': '#F44336',
 		'juez': '#8B4513',
-		'otro': '#9E9E9E'
+		'otro': '#9E9E9E',
+		'agente': '#000000',
+		'voice': '#FFFFFF',
+		'alipresi': '#FF0000'
 	};
 	let c = colorMap[speaker] || '#FFFFFF';
 
@@ -1108,7 +1177,7 @@ function drawLevelDialog(entry) {
 	uiText(16);
 	textAlign(LEFT, TOP);
 	fill(c);
-	let whoLabel = speaker === 'zyro' ? 'Zyro' : (speaker === 'guia' ? 'Guía' : (speaker === 'senator' ? 'Senador' : (speaker === 'juez' ? 'Juez' : speaker)));
+	let whoLabel = speaker === 'zyro' ? 'Zyro' : (speaker === 'guia' ? 'Guía' : (speaker === 'senator' ? 'Senador' : (speaker === 'juez' ? 'Juez' : (speaker === 'agente' ? 'Agente' : (speaker === 'voice' ? '???' : (speaker === 'alipresi' ? 'Alipresi' : speaker))))));
 	text(whoLabel + ':', width/2 - width*0.9/2 + 20, 60);
 
 	fill(255);
@@ -2225,16 +2294,795 @@ function drawVictoryDos() {
 	}
 }
 
-// ==================== NIVEL TRES - STUB ====================
+// ==================== NIVEL TRES - EJECUTIVO ====================
 function startNivelTres() {
 	nivelTresPhase = 1;
+	nivelTresDialogIndex = 0;
+	nivelTresDialogActive = true;
+	
+	// Quitar suelo
+	if (pisoJardin) pisoJardin.pos = {x: -5000, y: -5000};
+	
+	// Posicionar a Zyro y otroAlien juntos
+	zyro.pos = { x: width/2 - 100, y: height - 140 };
+	zyro.scale = 0.7;
+	zyro.visible = true;
+	
+	otroAlien.pos = { x: width/2 + 50, y: height - 130 };
+	otroAlien.scale = 0.7;
+	otroAlien.visible = true;
+	
+	// Diálogo inicial entre Zyro y otroAlien
+	nivelTresDialog = [
+		{ who: 'otro', text: '¡Mira, Zyro! Este es el Palacio Nacional.' },
+		{ who: 'otro', text: 'Aquí trabaja el Presidente de Mexicus.' },
+		{ who: 'otro', text: 'Representa el Poder Ejecutivo del país.' },
+		{ who: 'otro', text: 'Siempre he querido conocer al Presidente.' },
+		{ who: 'zyro', text: 'Hmm... no me parece tan impresionante.' },
+		{ who: 'zyro', text: 'Pero está bien, entremos a ver si nos reciben.' },
+		{ who: 'otro', text: '¡Sí! ¡Vamos!' }
+	];
 }
 
 function nivelTresLoop() {
-	background(200, 100, 100);
-	fill('white');
+	if (nivelTresPhase === 1) {
+		// FASE 1: Fuera del Palacio Nacional
+		if (palacioNacionalBg) {
+			image(palacioNacionalBg, 0, 0, width, height);
+		} else {
+			background(20, 80, 180);
+		}
+		
+		// Dibujar sprites
+		if (zyro) zyro.draw();
+		if (otroAlien) otroAlien.draw();
+		
+		// Diálogo inicial
+		if (nivelTresDialogActive) {
+			drawLevelDialog(nivelTresDialog[nivelTresDialogIndex]);
+			push(); 
+			uiText(14); 
+			fill('white'); 
+			textAlign(CENTER); 
+			text('Presiona ENTER para continuar', width/2, height - 40); 
+			pop();
+			
+			let enterDown = keyIsDown(ENTER);
+			let enterPressed = enterDown && !prevEnterDown;
+			if (enterPressed) {
+				nivelTresDialogIndex++;
+				if (nivelTresDialogIndex >= nivelTresDialog.length) {
+					nivelTresDialogActive = false;
+					nivelTresDialogIndex = 0;
+					// Pasar a fase 2 (interior)
+					startInteriorPalacio();
+				}
+			}
+		}
+	} else if (nivelTresPhase === 2) {
+		// FASE 2: Interior del Palacio con guías
+		runInteriorPalacio();
+	} else if (nivelTresPhase === 3) {
+		// FASE 3: Oficina presidencial - Confrontación
+		runOficinaPresidencial();
+	} else if (nivelTresPhase === 4 || nivelTresPhase === 5 || nivelTresPhase === 6) {
+		// FASES 4-6: Minijuego de Pong (3 rondas)
+		if (pongInterRoundDialog) {
+			runPongInterRoundDialog();
+		} else {
+			runPongGame();
+		}
+	} else if (nivelTresPhase === 97) {
+		// Diálogo final de victoria (NOOOOOOOOOOOOOOOOOOO)
+		runPongInterRoundDialog();
+	} else if (nivelTresPhase === 98) {
+		// Derrota en pong
+		displayNivel3LoseScreen();
+	} else if (nivelTresPhase === 99) {
+		// Victoria en pong
+		displayNivel3WinScreen();
+	}
+	
+	prevEnterDown = keyIsDown(ENTER);
+}
+
+function startInteriorPalacio() {
+	nivelTresPhase = 2;
+	nivelTresDialogIndex = 0;
+	nivelTresDialogActive = false;
+	
+	// Reposicionar sprites: Zyro y otroAlien a la derecha, guías a la izquierda
+	zyro.pos = { x: width - 250, y: height - 140 };
+	zyro.image = zyroIdleLeft; // Viendo hacia la izquierda
+	
+	otroAlien.pos = { x: width - 150, y: height - 130 };
+	otroAlien.image = otroAlienIdleLeft || otroAlienIdle; // Viendo hacia la izquierda
+	
+	// Crear guías a la izquierda (reusa sprites del nivel 1 y 2)
+	if (nivelUnoGuide) nivelUnoGuide.remove();
+	nivelUnoGuide = new Sprite(200, height - 150, 60, 150, 's');
+	nivelUnoGuide.image = tourguideLeftImg;
+	nivelUnoGuide.scale = 0.22;
+	
+	if (nivelDosGuide) nivelDosGuide.remove();
+	nivelDosGuide = new Sprite(350, height - 150, 60, 150, 's');
+	nivelDosGuide.image = guiaFemmImg;
+	nivelDosGuide.scale = 0.22;
+}
+
+function runInteriorPalacio() {
+	// Fondo interior (usar imagen de pasillo o placeholder)
+	if (pasilloNacionalImg) {
+		image(pasilloNacionalImg, 0, 0, width, height);
+	} else {
+		background(35, 110, 200);
+	}
+	
+	// Dibujar sprites
+	if (nivelUnoGuide) nivelUnoGuide.draw();
+	if (nivelDosGuide) nivelDosGuide.draw();
+	if (otroAlien) otroAlien.draw();
+	if (zyro) zyro.draw();
+	
+	// Permitir movimiento de Zyro si no hay diálogo activo
+	if (!nivelTresDialogActive && !agenteSecreto) {
+		controlesZyroBase();
+	}
+	
+	// Iniciar diálogo cuando Zyro se acerca a los guías
+	if (!nivelTresDialogActive && !nivelTresTourAccepted && nivelUnoGuide) {
+		let dx = abs(zyro.pos.x - nivelUnoGuide.pos.x);
+		if (dx < 150) {
+			nivelTresDialogActive = true;
+			nivelTresDialog = [
+				{ who: 'guia', text: '¡Pero si es Zyro! ¡Llegaste hasta acá!' },
+				{ who: 'guia', text: 'Nos tomamos un descanso para ver si llegabas.' },
+				{ who: 'zyro', text: 'Sí, aquí estoy con mi amigo.' },
+				{ who: 'guia', text: 'Este es el Palacio Nacional, sede del Poder Ejecutivo.' },
+				{ who: 'guia', text: 'El Presidente de México vive y trabaja aquí.' },
+				{ who: 'guia', text: 'Él es el jefe del Estado y del gobierno.' },
+				{ who: 'guia', text: 'Su mandato dura 6 años y no puede reelegirse.' },
+				{ who: 'guia', text: 'Sus funciones incluyen ejecutar las leyes que aprueba el Congreso.' },
+				{ who: 'guia', text: 'También dirige la política exterior y es comandante de las Fuerzas Armadas.' },
+				{ who: 'guia', text: 'Nombra a secretarios de Estado y otros funcionarios importantes.' },
+				{ who: 'guia', text: '¿Quieren explorar el lugar?' },
+				{ who: 'otro', text: '¡Sí, por favor! Siempre he querido conocer el Palacio.' }
+			];
+		}
+	}
+	
+	// Mostrar diálogo
+	if (nivelTresDialogActive && !agenteSecreto) {
+		drawLevelDialog(nivelTresDialog[nivelTresDialogIndex]);
+		push(); 
+		uiText(14); 
+		fill('white'); 
+		textAlign(CENTER); 
+		text('Presiona ENTER para continuar', width/2, height - 40); 
+		pop();
+		
+		let enterDown = keyIsDown(ENTER);
+		let enterPressed = enterDown && !prevEnterDown;
+		if (enterPressed) {
+			nivelTresDialogIndex++;
+			if (nivelTresDialogIndex >= nivelTresDialog.length) {
+				nivelTresDialogActive = false;
+				nivelTresDialogIndex = 0;
+				nivelTresTourAccepted = true;
+				// Crear agente del servicio secreto
+				crearAgenteSecreto();
+			}
+		}
+	}
+	
+	// Si el agente secreto apareció
+	if (agenteSecreto) {
+		agenteSecreto.draw();
+		
+		// Diálogo del agente
+		if (!nivelTresDialogActive) {
+			nivelTresDialogActive = true;
+			nivelTresDialog = [
+				{ who: 'agente', text: 'Disculpe, ¿es usted Zyro?' },
+				{ who: 'zyro', text: 'Sí, ¿pasa algo?' },
+				{ who: 'agente', text: 'El Presidente quiere verlo en su oficina.' },
+				{ who: 'agente', text: '¿Me acompaña, por favor?' },
+				{ who: 'otro', text: '¡Wow, Zyro! ¡Qué suerte!' },
+				{ who: 'otro', text: 'Yo me quedaré aquí con los guías. ¡Buena suerte!' },
+				{ who: 'zyro', text: 'Gracias... supongo que iré.' }
+			];
+			nivelTresDialogIndex = 0;
+		} else {
+			// Mostrar diálogo del agente
+			drawLevelDialog(nivelTresDialog[nivelTresDialogIndex]);
+			push(); 
+			uiText(14); 
+			fill('white'); 
+			textAlign(CENTER); 
+			text('Presiona ENTER para continuar', width/2, height - 40); 
+			pop();
+			
+			let enterDown = keyIsDown(ENTER);
+			let enterPressed = enterDown && !prevEnterDown;
+			if (enterPressed) {
+				nivelTresDialogIndex++;
+				if (nivelTresDialogIndex >= nivelTresDialog.length) {
+					nivelTresDialogActive = false;
+					// Transición a la oficina presidencial (Fase 3)
+					startOficinaPresidencial();
+				}
+			}
+		}
+	}
+}
+
+function crearAgenteSecreto() {
+	// Crear sprite del agente detrás de otroAlien
+	if (agenteSecreto) agenteSecreto.remove();
+	agenteSecreto = new Sprite(otroAlien.pos.x + 80, height - 100, 's');
+	agenteSecreto.w = 200;
+	agenteSecreto.h = 100;
+	agenteSecreto.color = color(0, 0, 0); // Negro para servicio secreto
+	agenteSecreto.rotationLock = true;
+}
+
+function startOficinaPresidencial() {
+	nivelTresPhase = 3;
+	nivelTresDialogIndex = 0;
+	nivelTresDialogActive = true;
+	
+	// Limpiar sprites del pasillo
+	if (nivelUnoGuide) {
+		nivelUnoGuide.remove();
+		nivelUnoGuide = null;
+	}
+	if (nivelDosGuide) {
+		nivelDosGuide.remove();
+		nivelDosGuide = null;
+	}
+	if (otroAlien) {
+		otroAlien.pos = { x: -5000, y: -5000 }; // Esconderlo
+	}
+	
+	// Posicionar a Zyro en el centro de la oficina
+	zyro.pos = { x: width/2, y: height - 140 };
+	zyro.image = zyroIdle;
+	
+	// Actualizar segundo agente con imagen
+	if (agenteSecreto) {
+		agenteSecreto.pos = { x: width/2 - 150, y: height - 120 };
+		if (guardHomImg) {
+			agenteSecreto.image = guardHomImg;
+			agenteSecreto.scale = 0.7;
+			agenteSecreto.w = 100;
+			agenteSecreto.h = 150;
+		} else {
+			agenteSecreto.color = color(101, 67, 33); // Fallback café/brown
+		}
+	}
+	
+	// Diálogo inicial de confrontación
+	nivelTresDialog = [
+		{ who: 'zyro', text: '¿Por qué me trajeron aquí?' },
+		{ who: 'voice', text: 'Tú sabes por qué, pequeño alienígena inmundo...' },
+		{ who: 'zyro', text: '¿Quién es?' },
+		// Aquí aparecerá alipresi
+	];
+}
+
+function runOficinaPresidencial() {
+	// Fondo de la oficina
+	if (despachoOvalImg) {
+		image(despachoOvalImg, 0, 0, width, height);
+	} else {
+		background(45, 130, 220);
+	}
+	
+	// Dibujar sprites
+	if (agenteSecreto) agenteSecreto.draw();
+	if (zyro) zyro.draw();
+	if (alipresi) alipresi.draw();
+	
+	// Mostrar diálogo
+	if (nivelTresDialogActive) {
+		let currentDialog = nivelTresDialog[nivelTresDialogIndex];
+		
+		// Si es el diálogo de voz, mostrar de forma especial
+		if (currentDialog.who === 'voice') {
+			push();
+			uiText(20);
+			fill(255, 255, 255, 200);
+			textAlign(CENTER);
+			text(currentDialog.text, width/2, 100);
+			pop();
+		} else {
+			drawLevelDialog(currentDialog);
+		}
+		
+		push(); 
+		uiText(14); 
+		fill('white'); 
+		textAlign(CENTER); 
+		text('Presiona ENTER para continuar', width/2, height - 40); 
+		pop();
+		
+		let enterDown = keyIsDown(ENTER);
+		let enterPressed = enterDown && !prevEnterDown;
+		if (enterPressed) {
+			nivelTresDialogIndex++;
+			
+			// Después del tercer diálogo (índice 2), crear alipresi
+			if (nivelTresDialogIndex === 3 && !alipresi) {
+				crearAlipresi();
+				// Añadir resto del diálogo
+				nivelTresDialog.push(
+					{ who: 'alipresi', text: 'Soy yo... el verdadero presidente de este planeta.' },
+					{ who: 'alipresi', text: 'Vengo del planeta Marte, conquisté la Tierra hace años.' },
+					{ who: 'alipresi', text: 'Los humanos creen que tienen un gobierno, pero todo es una farsa.' },
+					{ who: 'alipresi', text: 'Y ahora tú, pequeño entrometido, has llegado hasta aquí.' },
+					{ who: 'zyro', text: '¡No puedes hacer esto! ¡Los humanos merecen la verdad!' },
+					{ who: 'alipresi', text: 'Ja, ¿y quién se lo dirá? ¿Tú?' },
+					{ who: 'zyro', text: 'Aprendí sobre el Poder Ejecutivo. Sé que el presidente debe servir al pueblo.' },
+					{ who: 'zyro', text: '¡Debe ejecutar las leyes, no engañar a la gente!' },
+					{ who: 'alipresi', text: 'Qué conmovedor. Veamos si sabes tanto como dices.' },
+					{ who: 'alipresi', text: 'Te reto a un duelo de pong. Si ganas, te dejaré ir.' },
+					{ who: 'alipresi', text: 'Pero si pierdes... te quedarás aquí para siempre.' },
+					{ who: 'zyro', text: '¡Acepto tu desafío!' }
+				);
+			}
+			
+			if (nivelTresDialogIndex >= nivelTresDialog.length) {
+				nivelTresDialogActive = false;
+				// Iniciar el minijuego de pong (Fase 4)
+				startPongGame();
+			}
+		}
+	}
+}
+
+function crearAlipresi() {
+	// Crear sprite del presidente alienígena
+	if (alipresi) alipresi.remove();
+	alipresi = new Sprite(width/2 + 200, height - 120, 's');
+	alipresi.w = 100;
+	alipresi.h = 150;
+	if (alienMaloImg) {
+		alipresi.image = alienMaloImg;
+		alipresi.scale = 0.7; // Ajustar escala según sea necesario
+	} else {
+		alipresi.color = color(255, 0, 0); // Fallback rojo
+	}
+	alipresi.rotationLock = true;
+}
+
+function runPongInterRoundDialog() {
+	// Fondo borroso del palacio
+	if (palacioBorrosoImg) {
+		image(palacioBorrosoImg, 0, 0, width, height);
+	} else {
+		background(0);
+	}
+	
+	// Mostrar diálogo entre rondas
+	if (pongInterRoundMessages[pongInterRoundIndex]) {
+		drawLevelDialog(pongInterRoundMessages[pongInterRoundIndex]);
+		
+		push(); 
+		uiText(14); 
+		fill('white'); 
+		textAlign(CENTER); 
+		text('Presiona ENTER para continuar', width/2, height - 40); 
+		pop();
+		
+		let enterDown = keyIsDown(ENTER);
+		let enterPressed = enterDown && !prevEnterDown;
+		if (enterPressed) {
+			pongInterRoundIndex++;
+			if (pongInterRoundIndex >= pongInterRoundMessages.length) {
+				// Terminar diálogo
+				pongInterRoundDialog = false;
+				pongInterRoundIndex = 0;
+				
+				// Si estamos en fase 97 (diálogo final de derrota del presidente)
+				if (nivelTresPhase === 97) {
+					nivelTresPhase = 99; // Pasar a pantalla de victoria
+				} else {
+					// Avanzar a siguiente ronda
+					pongRound++;
+					pongScoreZyro = 0;
+					pongScoreEnemy = 0;
+					
+					// Ajustar puntaje objetivo según la ronda
+					if (pongRound === 2) {
+						pongTarget = 4; // Segunda ronda a 4 puntos
+					} else if (pongRound === 3) {
+						pongTarget = 3; // Tercera ronda a 3 puntos
+					}
+					
+					createEnemyPaddle();
+					resetPongBall();
+					selectPongQuestion();
+					pongTimer = pongTimerMax;
+				}
+			}
+		}
+	}
+}
+
+function startPongGame() {
+	nivelTresPhase = 4;
+	pongRound = 1;
+	pongScoreZyro = 0;
+	pongScoreEnemy = 0;
+	pongLives = 3;
+	pongTarget = 5; // Primera ronda a 5 puntos
+	pongInterRoundDialog = false;
+	
+	// Limpiar sprites de la oficina
+	if (agenteSecreto) {
+		agenteSecreto.pos = { x: -5000, y: -5000 };
+	}
+	if (alipresi) {
+		alipresi.pos = { x: -5000, y: -5000 };
+	}
+	
+	// Crear pelota de pong (roja)
+	if (pongBall) pongBall.remove();
+	pongBall = new Sprite(width/2, height/2, 15, 'd');
+	pongBall.diameter = 15;
+	pongBall.color = color(255, 0, 0); // Roja
+	pongBall.bounciness = 1;
+	pongBall.friction = 0;
+	pongBall.vel = { x: 4, y: 3 };
+	pongBall.rotationLock = true;
+	
+	// Crear paddle de Zyro (lima verde, lado izquierdo)
+	if (pongPaddleZyro) pongPaddleZyro.remove();
+	pongPaddleZyro = new Sprite(30, height/2, 15, 100, 's');
+	pongPaddleZyro.color = color(127, 255, 0); // #7FFF00 lime green
+	pongPaddleZyro.rotationLock = true;
+	
+	// Crear paddle enemigo (negro para agentes, rojo para presidente)
+	createEnemyPaddle();
+	
+	// Iniciar primera pregunta
+	pongQuestionActive = true;
+	pongTimer = pongTimerMax;
+	selectPongQuestion();
+}
+
+function createEnemyPaddle() {
+	if (pongPaddleEnemy) pongPaddleEnemy.remove();
+	pongPaddleEnemy = new Sprite(width - 30, height/2, 15, 100, 's');
+	
+	if (pongRound === 1) {
+		// Primera ronda - guardia femenina
+		if (guardFemImg) {
+			pongPaddleEnemy.image = guardFemImg;
+			pongPaddleEnemy.scale = 0.15;
+		} else {
+			pongPaddleEnemy.color = color(0, 0, 0); // Fallback negro
+		}
+	} else if (pongRound === 2) {
+		// Segunda ronda - guardia masculino
+		if (guardHomImg) {
+			pongPaddleEnemy.image = guardHomImg;
+			pongPaddleEnemy.scale = 0.15;
+		} else {
+			pongPaddleEnemy.color = color(0, 0, 0); // Fallback negro
+		}
+	} else if (pongRound === 3) {
+		// Tercera ronda - presidente
+		if (alienMaloImg) {
+			pongPaddleEnemy.image = alienMaloImg;
+			pongPaddleEnemy.scale = 0.15;
+		} else {
+			pongPaddleEnemy.color = color(255, 0, 0); // Fallback rojo
+		}
+	}
+	pongPaddleEnemy.rotationLock = true;
+}
+
+function selectPongQuestion() {
+	// Seleccionar pregunta según el nivel/ronda
+	let availableQuestions = ejecutivoQuestions.filter(q => q.level === pongRound);
+	if (availableQuestions.length > 0) {
+		pongCurrentQuestion = random(availableQuestions);
+	} else {
+		pongCurrentQuestion = random(ejecutivoQuestions);
+	}
+}
+
+function runPongGame() {
+	// Fondo borroso del palacio
+	if (palacioBorrosoImg) {
+		image(palacioBorrosoImg, 0, 0, width, height);
+	} else {
+		background(0);
+	}
+	
+	// Línea central
+	push();
+	stroke(255, 255, 255, 100);
+	strokeWeight(2);
+	for (let y = 0; y < height; y += 20) {
+		line(width/2, y, width/2, y + 10);
+	}
+	pop();
+	
+	// Dibujar sprites
+	if (pongBall) pongBall.draw();
+	if (pongPaddleZyro) pongPaddleZyro.draw();
+	if (pongPaddleEnemy) pongPaddleEnemy.draw();
+	
+	// Control del paddle de Zyro (si no está stunned)
+	if (!pongStunnedZyro && pongPaddleZyro) {
+		if (keyIsDown(UP_ARROW) && pongPaddleZyro.y > 50) {
+			pongPaddleZyro.y -= 6;
+		}
+		if (keyIsDown(DOWN_ARROW) && pongPaddleZyro.y < height - 50) {
+			pongPaddleZyro.y += 6;
+		}
+	}
+	
+	// IA simple del enemigo (si no está stunned)
+	if (!pongStunnedEnemy && pongPaddleEnemy && pongBall) {
+		if (pongBall.y < pongPaddleEnemy.y - 10) {
+			pongPaddleEnemy.y -= 4;
+		} else if (pongBall.y > pongPaddleEnemy.y + 10) {
+			pongPaddleEnemy.y += 4;
+		}
+	}
+	
+	// Rebote en techo y piso
+	if (pongBall) {
+		if (pongBall.y < 10 || pongBall.y > height - 10) {
+			pongBall.vel.y *= -1;
+		}
+		
+		// Rebote en paddles
+		if (pongBall.collides(pongPaddleZyro)) {
+			pongBall.vel.x = abs(pongBall.vel.x);
+			let offset = (pongBall.y - pongPaddleZyro.y) / 50;
+			pongBall.vel.y = offset * 5;
+		}
+		if (pongBall.collides(pongPaddleEnemy)) {
+			pongBall.vel.x = -abs(pongBall.vel.x);
+			let offset = (pongBall.y - pongPaddleEnemy.y) / 50;
+			pongBall.vel.y = offset * 5;
+		}
+		
+		// Detectar goles
+		if (pongBall.x < 0) {
+			// Gol del enemigo
+			pongScoreEnemy++;
+			resetPongBall();
+		} else if (pongBall.x > width) {
+			// Gol de Zyro
+			pongScoreZyro++;
+			resetPongBall();
+		}
+	}
+	
+	// Mostrar marcador
+	push();
+	fill(255);
+	uiText(32);
 	textAlign(CENTER);
-	text('Nivel 3 en construcción', width/2, height/2);
+	text(pongScoreZyro + ' - ' + pongScoreEnemy, width/2, 40);
+	pop();
+	
+	// Mostrar vidas
+	push();
+	fill(127, 255, 0);
+	uiText(20);
+	textAlign(LEFT);
+	text('Vidas: ' + pongLives, 20, 40);
+	pop();
+	
+	// Sistema de preguntas con timer
+	if (pongQuestionActive) {
+		// Contar el tiempo
+		pongTimer -= deltaTime / 1000; // deltaTime está en milisegundos
+		
+		// Mostrar timer
+		push();
+		fill(255);
+		uiText(40);
+		textAlign(CENTER);
+		text(Math.ceil(pongTimer), width/2, 100);
+		pop();
+		
+		// Mostrar pregunta
+		if (pongCurrentQuestion) {
+			push();
+			fill(0, 200);
+			rect(width/2, height/2, width * 0.9, 300, 10);
+			
+			fill(255);
+			uiText(18);
+			textAlign(CENTER, TOP);
+			text(pongCurrentQuestion.q, width/2, height/2 - 130, width * 0.85, 80);
+			
+			// Mostrar opciones
+			uiText(16);
+			for (let i = 0; i < pongCurrentQuestion.opts.length; i++) {
+				let yPos = height/2 - 40 + i * 40;
+				text((i+1) + '. ' + pongCurrentQuestion.opts[i], width/2, yPos);
+			}
+			
+			fill(255, 255, 0);
+			uiText(14);
+			text('Presiona 1, 2, 3 o 4 para responder', width/2, height/2 + 120);
+			pop();
+		}
+		
+		// Si se acabó el tiempo, respuesta incorrecta automática
+		if (pongTimer <= 0) {
+			handleWrongAnswer();
+		}
+	}
+	
+	// Verificar victoria o derrota
+	if (pongScoreEnemy >= pongTarget || pongLives <= 0) {
+		// Zyro pierde
+		nivelTresPhase = 98; // Estado de derrota
+	} else if (pongScoreZyro >= pongTarget) {
+		// Zyro gana esta ronda
+		if (pongRound < 3) {
+			// Mostrar diálogo entre rondas
+			pongInterRoundDialog = true;
+			pongInterRoundIndex = 0;
+			
+			if (pongRound === 1) {
+				// Diálogo después de derrotar al primer agente
+				pongInterRoundMessages = [
+					{ who: 'alipresi', text: '¿En serio? ¡Te está haciendo pedazos un alien!' },
+					{ who: 'alipresi', text: 'Imagínate lo que un marciano como yo podría hacerte.' },
+					{ who: 'alipresi', text: 'Entra tú, ehh... ¿cómo te llamas?' },
+					{ who: 'agente', text: 'Me llamo Lorenzo.' },
+					{ who: 'alipresi', text: 'Como sea, Luciano, ¡te toca!' }
+				];
+			} else if (pongRound === 2) {
+				// Diálogo después de derrotar al segundo agente
+				pongInterRoundMessages = [
+					{ who: 'alipresi', text: 'Tampoco tú, Leonardo... ¡Bola de agentes patito!' },
+					{ who: 'alipresi', text: 'Me toca a mí. ¡Yo no te tendré piedad!' }
+				];
+			}
+		} else {
+			// Zyro ganó todas las rondas - mostrar diálogo final
+			pongInterRoundDialog = true;
+			pongInterRoundIndex = 0;
+			pongInterRoundMessages = [
+				{ who: 'alipresi', text: 'NOOOOOOOOOOOOOOOOOOO' }
+			];
+			nivelTresPhase = 97; // Estado previo a victoria (para mostrar diálogo)
+		}
+	}
+}
+
+function resetPongBall() {
+	if (pongBall) {
+		pongBall.pos = { x: width/2, y: height/2 };
+		pongBall.vel = { x: random([-4, 4]), y: random(-3, 3) };
+		pongStunnedZyro = false;
+		pongStunnedEnemy = false;
+		pongQuestionActive = true;
+		pongTimer = pongTimerMax;
+		selectPongQuestion();
+	}
+}
+
+function handleCorrectAnswer() {
+	// Enemigo stunned, deja pasar la pelota
+	pongStunnedEnemy = true;
+	pongQuestionActive = false;
+	pongCurrentQuestion = null;
+}
+
+function handleWrongAnswer() {
+	// Zyro stunned, deja pasar la pelota y pierde una vida
+	pongStunnedZyro = true;
+	pongQuestionActive = false;
+	pongCurrentQuestion = null;
+	pongLives--;
+}
+
+function displayNivel3WinScreen() {
+	// Fondo borroso del palacio
+	if (palacioBorrosoImg) {
+		image(palacioBorrosoImg, 0, 0, width, height);
+	} else {
+		background(0, 150, 0);
+	}
+	
+	push();
+	fill(255);
+	uiText(48);
+	textAlign(CENTER);
+	text('¡Felicidades!', width/2, 80);
+	
+	uiText(24);
+	text('El presidente te ha otorgado', width/2, 140);
+	text('la banda presidencial', width/2, 170);
+	
+	// Mostrar imagen de la banda presidencial en el centro
+	if (bandaPresidencialImg) {
+		let imgSize = 200;
+		image(bandaPresidencialImg, width/2 - imgSize/2, height/2 - imgSize/2, imgSize, imgSize);
+	}
+	
+	uiText(20);
+	fill(255, 255, 255);
+	text('Regresas con tu amigo alien a su casa', width/2, height - 140);
+	
+	fill(255, 255, 0);
+	uiText(18);
+	text('Presiona R para volver al jardín', width/2, height - 80);
+	pop();
+	
+	if (keyIsDown(82)) { // R key
+		levelThreeCompleted = true; // Marcar nivel 3 como completado
+		cleanupPong();
+		returnToGarden();
+		levelBoxes[2].unlocked = false; // Desbloquear próximo nivel si existe
+		showReturnDialog = true;
+	}
+}
+
+function displayNivel3LoseScreen() {
+	background(150, 0, 0);
+	
+	push();
+	fill(255);
+	uiText(48);
+	textAlign(CENTER);
+	text('Oh no...', width/2, height/2 - 100);
+	
+	uiText(28);
+	text('¡Te derrotaron (presidencialmente)!', width/2, height/2 - 40);
+	
+	uiText(20);
+	fill(255, 255, 0);
+	text('Presiona R para volver al jardín', width/2, height/2 + 60);
+	text('Presiona ENTER para reintentar', width/2, height/2 + 100);
+	pop();
+	
+	if (keyIsDown(82)) { // R key
+		cleanupPong();
+		returnToGarden();
+		showReturnDialog = true;
+	}
+	
+	let enterDown = keyIsDown(ENTER);
+	let enterPressed = enterDown && !prevEnterDown;
+	if (enterPressed) {
+		// Reintentar desde el minijuego (fase 4)
+		cleanupPong();
+		startPongGame();
+	}
+}
+
+function cleanupPong() {
+	if (pongBall && !pongBall.removed) {
+		pongBall.remove();
+		pongBall = null;
+	}
+	if (pongPaddleZyro && !pongPaddleZyro.removed) {
+		pongPaddleZyro.remove();
+		pongPaddleZyro = null;
+	}
+	if (pongPaddleEnemy && !pongPaddleEnemy.removed) {
+		pongPaddleEnemy.remove();
+		pongPaddleEnemy = null;
+	}
+	pongQuestionActive = false;
+	pongCurrentQuestion = null;
+	pongScoreZyro = 0;
+	pongScoreEnemy = 0;
+	pongLives = 3;
+	pongRound = 1;
 }
 
 // ==================== HELPER FUNCTIONS ====================
@@ -2279,6 +3127,30 @@ function returnToGarden() {
 	}
 	breakoutBlocks = [];
 	breakoutQuestionBlocks = [];
+	
+	// Limpiar sprites del nivel 3
+	if (agenteSecreto && !agenteSecreto.removed) {
+		agenteSecreto.remove();
+		agenteSecreto = null;
+	}
+	if (alipresi && !alipresi.removed) {
+		alipresi.remove();
+		alipresi = null;
+	}
+	
+	// Limpiar pong
+	if (pongBall && !pongBall.removed) {
+		pongBall.remove();
+		pongBall = null;
+	}
+	if (pongPaddleZyro && !pongPaddleZyro.removed) {
+		pongPaddleZyro.remove();
+		pongPaddleZyro = null;
+	}
+	if (pongPaddleEnemy && !pongPaddleEnemy.removed) {
+		pongPaddleEnemy.remove();
+		pongPaddleEnemy = null;
+	}
 	
 	// Limpiar cajas de nivel existentes
 	for (let lb of levelBoxes) {
@@ -2393,6 +3265,25 @@ function keyPressed(){
 				breakoutBall.rotationLock = true;
 			}
 			
+			return false;
+		}
+	}
+	
+	// NIVEL 3 - Pong
+	if ((nivelTresPhase === 4 || nivelTresPhase === 5 || nivelTresPhase === 6) && pongQuestionActive && pongCurrentQuestion) {
+		let answer = -1;
+		
+		if (keyCode === 49 || key === '1') answer = 0;
+		if (keyCode === 50 || key === '2') answer = 1;
+		if (keyCode === 51 || key === '3') answer = 2;
+		if (keyCode === 52 || key === '4') answer = 3;
+		
+		if (answer >= 0 && answer < 4) {
+			if (answer === pongCurrentQuestion.correct) {
+				handleCorrectAnswer();
+			} else {
+				handleWrongAnswer();
+			}
 			return false;
 		}
 	}
