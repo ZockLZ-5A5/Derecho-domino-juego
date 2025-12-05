@@ -285,7 +285,9 @@ function displayDialogue() {
 function createLevelBoxes() {
 	// Clear any existing
 	for (let lb of levelBoxes) {
-		if (lb.sprite) lb.sprite.pos = {x: -5000, y: -5000};
+		if (lb.sprite && !lb.sprite.removed) {
+			lb.sprite.remove();
+		}
 	}
 	levelBoxes = [];
 
@@ -349,6 +351,9 @@ function enterLevel(index) {
 // Draw custom styled level boxes and handle collisions + Enter to enter
 function displayLevelBoxes() {
 	for (let lb of levelBoxes) {
+		// Skip temporary markers
+		if (lb.temp) continue;
+		
 		let sp = lb.sprite;
 		let x = sp.pos.x;
 		let y = sp.pos.y;
@@ -708,6 +713,10 @@ function update(){ // corre en loop, AQUÍ VA LA LÓGICA DEL JUEGO
 		textAlign(CENTER);
 		uiText(30);
 		
+		// Draw sprites explicitly
+		if (zyro) zyro.draw();
+		if (otroAlien) otroAlien.draw();
+		
 		// Don't allow Zyro movement while dialogue is active
 		if (!dialogueActive) {
 			controlesZyroBase();
@@ -730,7 +739,11 @@ function update(){ // corre en loop, AQUÍ VA LA LÓGICA DEL JUEGO
 			// Check if Zyro is to the LEFT of otroAlien and within range
 			if (zyro.pos.x < otroAlien.pos.x && (otroAlien.pos.x - zyro.pos.x) < 170) {
 				dudaotroAlien = false;
-				showReturnDialog = false; // Clear the flag
+				showReturnDialog = false; // Clear the flag immediately
+				// Create a temporary array to prevent re-initialization
+				if (levelBoxes.length === 0) {
+					levelBoxes.push({temp: true}); // Temporary marker
+				}
 				initializeDialogue(); // This function now handles different dialogues based on completed levels
 			}
 		}
@@ -744,6 +757,8 @@ function update(){ // corre en loop, AQUÍ VA LA LÓGICA DEL JUEGO
 				if (currentDialogueIndex >= dialogueArray.length) {
 					// dialogue finished, create level boxes
 					dialogueActive = false;
+					// Clear temporary marker before creating real boxes
+					levelBoxes = [];
 					createLevelBoxes();
 				}
 			}
@@ -1142,6 +1157,12 @@ function startMinigame(){
 	minigameSpawnTimer = 0;
 	questionsAsked = [];
 	
+	// Reposicionar a Zyro
+	zyro.pos = {x: width/2, y: height - 70};
+	zyro.vel = {x: 0, y: 0};
+	zyro.scale = 0.6;
+	zyro.visible = true;
+	
 	// Crear pool de preguntas y mezclarlo
 	questionsPool = [
 		{q: '¿Qué es el Poder Legislativo?', opts: ['El poder encargado de aplicar las leyes','El poder encargado de interpretar las leyes','El poder encargado de crear y modificar leyes','El poder que dirige a las Fuerzas Armadas'], correct:2},
@@ -1168,9 +1189,19 @@ function startMinigame(){
 }
 
 function runMinigame(){
-	// background keep camera
-	if (camaraImg) image(camaraImg, 0, 0, width, height);
-	else background(80);
+	// Usar el mismo fondo que la pantalla de victoria
+	if (nivel1PasadoImg) {
+		image(nivel1PasadoImg, 0, 0, width, height);
+	} else {
+		// Degradado de verde a azul como en drawVictoryUno
+		for (let i = 0; i < height; i++) {
+			let inter = map(i, 0, height, 0, 1);
+			let c = lerpColor(color(76, 175, 80), color(33, 150, 243), inter);
+			stroke(c);
+			line(0, i, width, i);
+		}
+	}
+	noStroke();
 
 	// shrink zyro and confine left-right movement
 	zyro.scale = 0.6;
@@ -1415,7 +1446,7 @@ function startNivelDos() {
 	
 	// Create guide sprite usando la imagen del nivel 1
 	if (nivelDosGuide) nivelDosGuide.remove();
-	nivelDosGuide = new Sprite(width - 190, height - 80, 60, 150, 's');
+	nivelDosGuide = new Sprite(width - 290, height - 80, 60, 150, 's');
 	nivelDosGuide.image = guiaFemmImg;
 	nivelDosGuide.scale = 0.22;
 	
@@ -1549,6 +1580,7 @@ function nivelDosLoop() {
 		} else if (!mazoGolpeado) {
 			// Solo permitir movimiento después del diálogo inicial y antes de golpear el mazo
 			zyro.pos.y = height - 80;
+			zyro.vel.y = 0; // Prevenir caída por gravedad
 			controlesZyroBase();
 		}
 		
@@ -1557,14 +1589,6 @@ function nivelDosLoop() {
 		// Dibujar el mazo en el centro si no ha sido golpeado
 		if (!mazoGolpeado && gavelSprite) {
 			gavelSprite.draw();
-			
-			// Mostrar instrucciones en pantalla
-			push();
-			fill('white');
-			uiText(20);
-			textAlign(CENTER);
-			text('Acércate al mazo en el centro', width/2, 60);
-			pop();
 			
 			// Mostrar hint para golpear el mazo cuando Zyro esté cerca
 			let dx = abs(zyro.pos.x - gavelSprite.x);
@@ -1588,13 +1612,6 @@ function nivelDosLoop() {
 			push();
 			fill(139, 69, 19);
 			rect(width/2, height/2, 60, 60);
-			pop();
-			
-			push();
-			fill('white');
-			uiText(20);
-			textAlign(CENTER);
-			text('Acércate al mazo (cuadrado café)', width/2, 60);
 			pop();
 			
 			let dx = abs(zyro.pos.x - width/2);
@@ -1691,10 +1708,10 @@ function startBreakoutGame() {
 	breakoutBall.color = '#FF0000'; // Roja
 	breakoutBall.bounciness = 1;
 	breakoutBall.friction = 0;
-	breakoutBall.vel = {x: 4, y: -6};
+	breakoutBall.vel = {x: 2, y: -3};
 	breakoutBall.rotationLock = true;
 	
-	// Crear bloques (5 filas x 10 columnas = 50 bloques)
+	// Crear bloques (10 filas x 10 columnas = 100 bloques)
 	breakoutBlocks = [];
 	breakoutQuestionBlocks = [];
 	
@@ -1702,26 +1719,38 @@ function startBreakoutGame() {
 	let blockHeight = 25;
 	let startX = (width - (blockWidth * 10)) / 2;
 	let startY = 80;
-	let colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8'];
+	let colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#FF9999', '#66D9EF', '#A29BFE', '#FD79A8', '#FDCB6E'];
 	
-	for (let row = 0; row < 5; row++) {
+	for (let row = 0; row < 10; row++) {
 		for (let col = 0; col < 10; col++) {
 			let x = startX + col * blockWidth + blockWidth/2;
 			let y = startY + row * blockHeight + blockHeight/2;
 			let block = new Sprite(x, y, blockWidth - 4, blockHeight - 4, 's');
-			block.color = colors[row];
+			
+			// 20% de bloques son indestructibles (grises)
+			if (random() < 0.2) {
+				block.color = '#4A4A4A'; // Gris oscuro
+				block.isUnbreakable = true;
+			} else {
+				block.color = colors[row];
+				block.isUnbreakable = false;
+			}
+			
 			block.isQuestionBlock = false;
 			breakoutBlocks.push(block);
 		}
 	}
 	
-	// Seleccionar 10 bloques aleatorios para preguntas
+	// Seleccionar 10 bloques aleatorios (que no sean indestructibles) para preguntas
 	let availableIndices = [];
 	for (let i = 0; i < breakoutBlocks.length; i++) {
-		availableIndices.push(i);
+		if (!breakoutBlocks[i].isUnbreakable) {
+			availableIndices.push(i);
+		}
 	}
 	
 	for (let i = 0; i < 10; i++) {
+		if (availableIndices.length === 0) break;
 		let randomIdx = floor(random(availableIndices.length));
 		let blockIdx = availableIndices[randomIdx];
 		breakoutBlocks[blockIdx].isQuestionBlock = true;
@@ -1765,9 +1794,9 @@ function runBreakoutGame() {
 			// Rebote en paredes laterales
 			if (breakoutBall.x <= breakoutBall.width/2 || breakoutBall.x >= width - breakoutBall.width/2) {
 				breakoutBall.vel.x *= -1;
-				// Reducir velocidad en 3 al rebotar en paredes
+				// Reducir velocidad en 0.5 al rebotar en paredes
 				let speed = sqrt(breakoutBall.vel.x * breakoutBall.vel.x + breakoutBall.vel.y * breakoutBall.vel.y);
-				let newSpeed = max(3, speed - 3);
+				let newSpeed = max(2, speed - 0.5);
 				let ratio = newSpeed / speed;
 				breakoutBall.vel.x *= ratio;
 				breakoutBall.vel.y *= ratio;
@@ -1775,9 +1804,9 @@ function runBreakoutGame() {
 			// Rebote en techo
 			if (breakoutBall.y <= breakoutBall.height/2) {
 				breakoutBall.vel.y *= -1;
-				// Reducir velocidad en 3 al rebotar en techo
+				// Reducir velocidad en 0.5 al rebotar en techo
 				let speed = sqrt(breakoutBall.vel.x * breakoutBall.vel.x + breakoutBall.vel.y * breakoutBall.vel.y);
-				let newSpeed = max(3, speed - 3);
+				let newSpeed = max(2, speed - 0.5);
 				let ratio = newSpeed / speed;
 				breakoutBall.vel.x *= ratio;
 				breakoutBall.vel.y *= ratio;
@@ -1790,26 +1819,74 @@ function runBreakoutGame() {
 			let hitPos = (breakoutBall.x - breakoutPaddle.x) / (breakoutPaddle.width/2);
 			breakoutBall.vel.x = hitPos * 5;
 			breakoutBall.vel.y = -abs(breakoutBall.vel.y);
-			// Incrementar velocidad en 5 con cada rebote en la paleta
+			// Incrementar velocidad en 0.8 con cada rebote en la paleta
 			let speed = sqrt(breakoutBall.vel.x * breakoutBall.vel.x + breakoutBall.vel.y * breakoutBall.vel.y);
-			let newSpeed = speed + 5;
+			let newSpeed = speed + 0.8;
 			let ratio = newSpeed / speed;
-			breakoutBall.vel.x *= ratio;
-			breakoutBall.vel.y *= ratio;
-		}
-		
-		// Colisión con bloques
+				breakoutBall.vel.x *= ratio;
+				breakoutBall.vel.y *= ratio;
+		}		// Colisión con bloques
 		for (let i = breakoutBlocks.length - 1; i >= 0; i--) {
 			let block = breakoutBlocks[i];
 			if (block && !block.removed && breakoutBall && !breakoutBall.removed) {
 				// Usar overlapping para detección más precisa
 				if (breakoutBall.overlaps(block)) {
 					
-					breakoutBall.vel.y *= -1;
+					// Calcular desde qué lado golpeó la pelota
+					let ballPrevX = breakoutBall.x - breakoutBall.vel.x;
+					let ballPrevY = breakoutBall.y - breakoutBall.vel.y;
+					
+					let blockLeft = block.x - block.width/2;
+					let blockRight = block.x + block.width/2;
+					let blockTop = block.y - block.height/2;
+					let blockBottom = block.y + block.height/2;
+					
+					// Determinar si golpeó horizontal o verticalmente
+					let fromLeft = ballPrevX < blockLeft;
+					let fromRight = ballPrevX > blockRight;
+					let fromTop = ballPrevY < blockTop;
+					let fromBottom = ballPrevY > blockBottom;
+					
+					// Rebotar según el lado
+					if (fromLeft || fromRight) {
+						breakoutBall.vel.x *= -1;
+						// Desplazar la pelota fuera del bloque
+						if (fromLeft) {
+							breakoutBall.x = blockLeft - breakoutBall.width/2 - 1;
+						} else {
+							breakoutBall.x = blockRight + breakoutBall.width/2 + 1;
+						}
+					} else {
+						breakoutBall.vel.y *= -1;
+						// Desplazar la pelota fuera del bloque
+						if (fromTop) {
+							breakoutBall.y = blockTop - breakoutBall.height/2 - 1;
+						} else {
+							breakoutBall.y = blockBottom + breakoutBall.height/2 + 1;
+						}
+					}
+					
+					// Reducir velocidad en 0.5 al golpear bloques
+					let speed = sqrt(breakoutBall.vel.x * breakoutBall.vel.x + breakoutBall.vel.y * breakoutBall.vel.y);
+					let newSpeed = max(2, speed - 0.5);
+					let ratio = newSpeed / speed;
+					breakoutBall.vel.x *= ratio;
+					breakoutBall.vel.y *= ratio;
+					
+					// Si el bloque es indestructible, solo rebotar (ya rebotó arriba)
+					if (block.isUnbreakable) {
+						break; // Salir del loop para evitar múltiples colisiones en el mismo frame
+					}
 					
 					if (block.isQuestionBlock) {
 						// Bloque de pregunta - pausar y mostrar pregunta
 						breakoutGamePaused = true;
+						
+						// Ocultar la pelota durante la pregunta
+						if (breakoutBall) {
+							breakoutBall.pos = {x: -5000, y: -5000};
+							breakoutBall.vel = {x: 0, y: 0};
+						}
 						
 						// Guardar posición del bloque para regenerarlo
 						let blockX = block.x;
@@ -1883,7 +1960,7 @@ function runBreakoutGame() {
 				// Resetear pelota
 				breakoutBall.x = width/2;
 				breakoutBall.y = height - 70;
-				breakoutBall.vel = {x: 4, y: -6};
+				breakoutBall.vel = {x: 2, y: -3};
 			}
 		}
 	} // Fin de if (!breakoutGamePaused)
@@ -2016,6 +2093,7 @@ function startSalaJueces() {
 	
 	// Posicionar a Zyro a la izquierda (más abajo sin suelo)
 	zyro.pos = { x: 80, y: height - 80 };
+	zyro.vel.y = 0; // Detener caída por gravedad
 	
 	// Diálogo inicial de Zyro al entrar
 	nivelDosDialog = [
@@ -2026,12 +2104,12 @@ function startSalaJueces() {
 	if (gavelSprite) gavelSprite.remove();
 	gavelSprite = new Sprite(width/2 - 110, height/2 + 95, 60, 60, 's');
 	gavelSprite.rotationLock = true;
+	gavelSprite.color = color(139, 69, 19); // Color café/marrón por defecto
 	// Si hay imagen de mazo, usarla
-	if (gavelImg && gavelImg.width > 1) {
+	if (gavelImg) {
 		gavelSprite.image = gavelImg;
-		gavelSprite.scale = 0.15;
-	} else {
-		gavelSprite.color = color(139, 69, 19); // Color café/marrón por defecto
+		gavelSprite.w = 60;
+		gavelSprite.h = 60;
 	}
 }
 
@@ -2112,7 +2190,7 @@ function drawVictoryDos() {
 	}
 	noStroke();
 	
-	fill('white');
+	fill('#333333');
 	textAlign(CENTER);
 	uiText(48);
 	text('¡Felicidades!', width/2, height/2 - 100);
@@ -2133,7 +2211,7 @@ function drawVictoryDos() {
 	}
 	
 	uiText(24);
-	fill('#FFD700');
+	fill('#FFAA00');
 	text('🚁 Un helicóptero te llevará de regreso 🚁', width/2, height/2 + 120);
 	fill('white');
 	uiText(20);
@@ -2167,6 +2245,49 @@ function returnToGarden() {
 	}
 	minigameFalling = [];
 	
+	// Limpiar sprites del nivel 1
+	if (nivelUnoGuide && !nivelUnoGuide.removed) {
+		nivelUnoGuide.remove();
+		nivelUnoGuide = null;
+	}
+	
+	// Limpiar sprites del nivel 2
+	if (nivelDosGuide && !nivelDosGuide.removed) {
+		nivelDosGuide.remove();
+		nivelDosGuide = null;
+	}
+	if (gavelSprite && !gavelSprite.removed) {
+		gavelSprite.remove();
+		gavelSprite = null;
+	}
+	for (let juez of juezSprites) {
+		if (juez && !juez.removed) juez.remove();
+	}
+	juezSprites = [];
+	
+	// Limpiar breakout
+	if (breakoutBall && !breakoutBall.removed) {
+		breakoutBall.remove();
+		breakoutBall = null;
+	}
+	if (breakoutPaddle && !breakoutPaddle.removed) {
+		breakoutPaddle.remove();
+		breakoutPaddle = null;
+	}
+	for (let block of breakoutBlocks) {
+		if (block && !block.removed) block.remove();
+	}
+	breakoutBlocks = [];
+	breakoutQuestionBlocks = [];
+	
+	// Limpiar cajas de nivel existentes
+	for (let lb of levelBoxes) {
+		if (lb.sprite && !lb.sprite.removed) {
+			lb.sprite.remove();
+		}
+	}
+	levelBoxes = [];
+	
 	// Resetear fase del juego
 	screen = 2;
 	nivelUnoPhase = 0;
@@ -2195,9 +2316,6 @@ function returnToGarden() {
 	// IMPORTANTE: Activar el flag de diálogo de regreso
 	showReturnDialog = true;
 	returnDialogIndex = 0;
-	
-	// NO crear cajas de niveles inmediatamente - esperar al diálogo
-	levelBoxes = [];
 }
 
 function keyPressed(){
@@ -2258,6 +2376,23 @@ function keyPressed(){
 			
 			breakoutGamePaused = false;
 			currentQuestion = null;
+			
+			// Lanzar nueva pelota después de responder
+			if (breakoutBall && !breakoutBall.removed) {
+				breakoutBall.pos = {x: width/2, y: height - 70};
+				breakoutBall.vel = {x: random(-2, 2), y: -3};
+				breakoutBall.visible = true;
+			} else {
+				// Si la pelota fue removida, crear una nueva
+				breakoutBall = new Sprite(width/2, height - 70, 12, 'd');
+				breakoutBall.diameter = 12;
+				breakoutBall.color = '#FF0000';
+				breakoutBall.bounciness = 1;
+				breakoutBall.friction = 0;
+				breakoutBall.vel = {x: random(-2, 2), y: -3};
+				breakoutBall.rotationLock = true;
+			}
+			
 			return false;
 		}
 	}
