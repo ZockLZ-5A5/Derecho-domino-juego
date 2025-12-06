@@ -71,7 +71,7 @@ let nivelDosGuide = null;
 let nivelDosTourAccepted = false;
 let nivelDosTourFinished = false;
 let levelTwoProgress = 0;
-let levelTwoHealth = 3;
+let levelTwoHealth = 5;
 let levelTwoCompleted = false;
 let corteBg, pasilloCorteImg, salaJuecesImg;
 let nivel2BorrosoImg; // Fondo borroso para el minijuego breakout
@@ -101,7 +101,8 @@ let nivelTresTourAccepted = false;
 let levelThreeCompleted = false;
 let palacioNacionalBg, pasilloNacionalImg, despachoOvalImg, palacioBorrosoImg, bandaPresidencialImg;
 let presidenteSprite, agente1Sprite, agente2Sprite;
-let agenteSecreto = null; // agente del servicio secreto
+let agenteSecreto = null; // agente del servicio secreto (guardia masculino)
+let agenteFem = null; // agente femenina en fase 3
 let alipresi = null; // presidente alienígena antagonista
 let alienMaloImg; // imagen del presidente malo
 let guardFemImg, guardHomImg; // imágenes de los guardias
@@ -109,20 +110,19 @@ let guardFemSprite = null; // sprite de la guardia femenina (en pong)
 let guardHomSprite = null; // sprite del guardia masculino (en pong)
 let viejoSprite = null; // el viejo acompaña en nivel 3
 let pongBall, pongPaddleZyro, pongPaddleEnemy;
+let pongTennisBall = null; // Pelota de tenis (círculo amarillo con ?)
+let pongBallSpeed = 8; // Velocidad base de la pelota (más rápida)
 let pongScoreZyro = 0, pongScoreEnemy = 0;
-let pongTarget = 5; // puntos necesarios (cambia por ronda: 5, 4, 3)
-let pongRound = 1; // 1=agente1, 2=agente2, 3=presidente
+let pongQuestionsPerRound = 5; // 5 preguntas por contrincante
+let pongQuestionsAnswered = 0; // Preguntas respondidas en la ronda actual
+let pongRound = 1; // 1=guardia fem, 2=guardia masc, 3=presidente
 let ejecutivoQuestions = [];
 let pongQuestionActive = false;
 let pongCurrentQuestion = null;
 let pongTimer = 0;
 let pongTimerMax = 10; // 10 segundos por pregunta
-let pongGameTimer = 0; // Temporizador durante el juego
-let pongQuestionTriggered = false; // Si ya se activó la pregunta en esta ronda
-let pongStunnedZyro = false;
-let pongStunnedEnemy = false;
-let pongStunTimer = 0; // Temporizador de atontamiento
-let pongLives = 3; // vidas de Zyro
+let pongTennisBallTimer = 0; // Temporizador para aparecer pelota de tenis (15 seg)
+let pongLives = 5; // vidas totales para todo el minijuego (no se resetean entre rondas)
 let pongInterRoundDialog = false;
 let pongInterRoundIndex = 0;
 let pongInterRoundMessages = [];
@@ -134,6 +134,7 @@ let showFinalDialog = false;
 let finalDialogIndex = 0;
 let finalDialogMessages = [];
 let showCredits = false;
+let otroAlienRevealed = false; // track if otroAlien name has been revealed
 
 // Preload assets
 function preload() {
@@ -203,6 +204,7 @@ function preload() {
 		{q: '¿Cuánto dura el mandato presidencial?', opts: ['4 años', '6 años', '8 años', '5 años'], correct: 1, level: 1},
 		{q: '¿Dónde reside el Presidente de México?', opts: ['En el Congreso', 'En la Suprema Corte', 'En el Palacio Nacional', 'En Los Pinos'], correct: 2, level: 1},
 		{q: '¿El Presidente puede ser reelecto?', opts: ['Sí, indefinidamente', 'No, nunca', 'Sí, una vez', 'Solo después de 12 años'], correct: 1, level: 1},
+		{q: '¿Qué poder ejecuta y hace cumplir las leyes?', opts: ['Legislativo', 'Judicial', 'Ejecutivo', 'Municipal'], correct: 2, level: 1},
 		// Nivel 2 - Agente 2 (medias)
 		{q: '¿Qué es el gabinete presidencial?', opts: ['Un mueble', 'El conjunto de secretarios de Estado', 'Una sala del palacio', 'Un partido político'], correct: 1, level: 2},
 		{q: '¿Quién aprueba los nombramientos del gabinete?', opts: ['El pueblo', 'El Senado', 'La Suprema Corte', 'Los gobernadores'], correct: 1, level: 2},
@@ -298,20 +300,30 @@ function displayDialogue() {
 	push();
 	noFill();
 	// outline color by speaker
-	if (d.speaker === 'zyro') stroke('#4CAF50');
-	else stroke('#9E9E9E');
+	let speakerColor;
+	if (d.speaker === 'zyro') speakerColor = '#4CAF50';
+	else speakerColor = '#9E9E9E';
+	
+	stroke(speakerColor);
 	strokeWeight(4);
 	fill(0, 200);
 	let boxY = 110;
 	rect(width/2, boxY, width * 0.9, 160, 10);
 
-	// text: color by speaker
+	// Speaker name
 	noStroke();
-	if (d.speaker === 'zyro') fill('#4CAF50'); else fill('#9E9E9E');
+	fill(speakerColor);
+	uiText(16);
+	textAlign(LEFT, TOP);
+	let speakerName = d.speaker === 'zyro' ? 'Zyro' : (d.speaker === 'otro' ? (otroAlienRevealed ? 'Blinky' : '???') : d.speaker);
+	text(speakerName + ':', width/2 - width*0.9/2 + 30, boxY - 70);
+
+	// text
+	fill('white');
 	uiText(18);
 	textAlign(LEFT, TOP);
 	let pad = 30;
-	text(d.text, width/2 - width*0.9/2 + pad, boxY - 70, width*0.9 - pad*2, 130);
+	text(d.text, width/2 - width*0.9/2 + pad, boxY - 70 + 25, width*0.9 - pad*2, 120);
 
 	// hint
 	uiText(14);
@@ -646,14 +658,14 @@ function setup(){ // corre 1 vez, CARGAR SPRITES AQUÍ!!!
 	pasilloNacionalImg = loadImage("assets/palaciopasillo.png");
 	despachoOvalImg = loadImage("assets/palaciooficina.png");
 	palacioBorrosoImg = loadImage("assets/palacioborroso.png");
-	bandaPresidencialImg = loadImage("assets/bandapresidencial.png");
+	bandaPresidencialImg = loadImage("assets/banda.png");
 	alienMaloImg = loadImage("assets/alienmalo.png");
 	guardFemImg = loadImage("assets/guardfem.png");
 	guardHomImg = loadImage("assets/guardhom.png");
 	
 	trofeoPin = loadImage("assets/pinmexico.png");
 	trofeoMazo = loadImage("assets/mazos.png");
-	trofeoBanda = createPlaceholderImage(40, 40, color(0, 104, 71));
+	trofeoBanda = loadImage("assets/banda.png");
 	
 	// Screen 0 is drawn in update(), not here
 	screen = 0;
@@ -669,12 +681,71 @@ function update(){ // corre en loop, AQUÍ VA LA LÓGICA DEL JUEGO
 	// Credits screen
 	if (showCredits) {
 		background(0);
+		
+		// Texto a la izquierda (20px del borde)
 		push();
 		fill(255);
-		uiText(60);
-		textAlign(CENTER, CENTER);
-		text('Gracias por jugar', width/2, height/2);
+		uiText(48);
+		textAlign(LEFT, TOP);
+		text('Gracias por jugar', 20, 40);
+		
+		uiText(20);
+		fill(200);
+		text('Has completado tu aventura', 20, 120);
+		text('aprendiendo sobre el gobierno', 20, 150);
+		text('de México.', 20, 180);
 		pop();
+		
+		// Trofeos abajo del texto a la izquierda
+		let trophyY = height - 200;
+		let trophySize = 80;
+		let trophySpacing = 100;
+		
+		if (trofeoPin) {
+			image(trofeoPin, 40, trophyY, trophySize, trophySize);
+		}
+		if (trofeoMazo) {
+			image(trofeoMazo, 40 + trophySpacing, trophyY, trophySize, trophySize);
+		}
+		if (trofeoBanda) {
+			image(trofeoBanda, 40 + trophySpacing * 2, trophyY, trophySize, trophySize);
+		}
+		
+		// Imagen de Zyro gigante a la derecha
+		if (zyroIdle) {
+			let zyroSize = height * 0.5; // Cabeza llena media hoja
+			let zyroX = width - zyroSize/2 - 50;
+			let zyroY = height/4;
+			image(zyroIdle, zyroX - zyroSize/2, zyroY - zyroSize/2, zyroSize, zyroSize);
+			
+			// Tierra debajo de Zyro, centrada con él
+			if (tierraInicio) {
+				let tierraSize = zyroSize * 0.6;
+				image(tierraInicio, zyroX - tierraSize/2, zyroY + zyroSize/2 - 40, tierraSize, tierraSize);
+			}
+		}
+		
+		// Botón "Volver al inicio" abajo
+		push();
+		// Verificar si el mouse está sobre el botón
+		let buttonX = width/2 - 150;
+		let buttonY = height - 80;
+		let buttonW = 300;
+		let buttonH = 50;
+		let isHover = mouseX > buttonX && mouseX < buttonX + buttonW && mouseY > buttonY && mouseY < buttonY + buttonH;
+		
+		if (isHover) {
+			fill(120, 220, 120); // Más claro al pasar el mouse
+		} else {
+			fill(100, 200, 100);
+		}
+		rect(buttonX, buttonY, buttonW, buttonH, 10);
+		fill(255);
+		uiText(20);
+		textAlign(CENTER, CENTER);
+		text('Volver al inicio', width/2, height - 55);
+		pop();
+		
 		return;
 	}
 	
@@ -833,6 +904,7 @@ function update(){ // corre en loop, AQUÍ VA LA LÓGICA DEL JUEGO
 				if (currentDialogueIndex >= dialogueArray.length) {
 					// dialogue finished, create level boxes
 					dialogueActive = false;
+					otroAlienRevealed = true; // First dialog complete, name revealed
 					// Clear temporary marker before creating real boxes
 					levelBoxes = [];
 					createLevelBoxes();
@@ -1170,7 +1242,7 @@ function drawLevelDialog(entry) {
 		'senator': '#F44336',
 		'juez': '#8B4513',
 		'otro': '#9E9E9E',
-		'agente': '#000000',
+		'agente': '#FFFFFF',
 		'voice': '#FFFFFF',
 		'alipresi': '#FF0000'
 	};
@@ -1187,7 +1259,7 @@ function drawLevelDialog(entry) {
 	uiText(16);
 	textAlign(LEFT, TOP);
 	fill(c);
-	let whoLabel = speaker === 'zyro' ? 'Zyro' : (speaker === 'guia' ? 'Guía' : (speaker === 'senator' ? 'Senador' : (speaker === 'juez' ? 'Juez' : (speaker === 'agente' ? 'Agente' : (speaker === 'voice' ? '???' : (speaker === 'alipresi' ? 'Alipresi' : speaker))))));
+	let whoLabel = speaker === 'zyro' ? 'Zyro' : (speaker === 'otro' ? (otroAlienRevealed ? 'Blinky' : '???') : (speaker === 'guia' ? 'Guía' : (speaker === 'senator' ? 'Senador' : (speaker === 'juez' ? 'Juez' : (speaker === 'agente' ? 'Agente' : (speaker === 'voice' ? '???' : (speaker === 'alipresi' ? 'Alipresi' : speaker)))))));
 	text(whoLabel + ':', width/2 - width*0.9/2 + 20, 60);
 
 	fill(255);
@@ -1508,7 +1580,7 @@ function drawVictoryUno() {
 function startNivelDos() {
 	nivelDosPhase = 1;
 	levelTwoProgress = 0;
-	levelTwoHealth = 3;
+	levelTwoHealth = 5;
 	nivelDosDialogIndex = 0;
 	nivelDosDialogActive = false;
 	nivelDosTourFinished = false;
@@ -1755,7 +1827,7 @@ function nivelDosLoop() {
 function startBreakoutGame() {
 	nivelDosPhase = 4;
 	levelTwoProgress = 0;
-	levelTwoHealth = 3;
+	levelTwoHealth = 5;
 	breakoutQuestionsAnswered = 0;
 	breakoutGamePaused = false;
 	
@@ -1826,7 +1898,7 @@ function startBreakoutGame() {
 		}
 	}
 	
-	// Seleccionar 15 bloques aleatorios (que no sean indestructibles) para preguntas
+	// Seleccionar 20 bloques aleatorios (que no sean indestructibles) para preguntas
 	let availableIndices = [];
 	for (let i = 0; i < breakoutBlocks.length; i++) {
 		if (!breakoutBlocks[i].isUnbreakable) {
@@ -1834,7 +1906,7 @@ function startBreakoutGame() {
 		}
 	}
 	
-	for (let i = 0; i < 15; i++) {
+	for (let i = 0; i < 20; i++) {
 		if (availableIndices.length === 0) break;
 		let randomIdx = floor(random(availableIndices.length));
 		let blockIdx = availableIndices[randomIdx];
@@ -1986,7 +2058,7 @@ function runBreakoutGame() {
 	fill(200);
 	rect(120, 30, 220, 20, 6);
 	fill('#F44336');
-	let hw = map(levelTwoHealth, 0, 3, 0, 220);
+	let hw = map(levelTwoHealth, 0, 5, 0, 220);
 	rect(120 - 110 + hw/2, 30, hw, 20, 6);
 	fill('white'); uiText(14); textAlign(LEFT); 
 	text('Vidas: ' + levelTwoHealth, 20, 26);
@@ -2335,27 +2407,43 @@ function startInteriorPalacio() {
 	nivelTresDialogIndex = 0;
 	nivelTresDialogActive = true; // Iniciar diálogo automáticamente
 	
-	// Reposicionar sprites: Zyro y otroAlien en el centro, Zyro atrás de otroAlien
-	zyro.pos = { x: width/2 + 20, y: height - 100 }; // Zyro atrás (más arriba)
+	// Reposicionar sprites al borde inferior de la pantalla
+	// otroAlien viendo hacia la izquierda
+	otroAlien.pos = { x: width/2 - 90, y: height - 70 }; // otroAlien adelante
+	otroAlien.image = "assets/otroAlien.png";
+	otroAlien.scale = 0.7;
+	otroAlien.mirror.x = true; // Voltear horizontalmente para que mire a la izquierda
+	otroAlien.visible = true;
+	
+	// Zyro más a la derecha de otroAlien
+	zyro.pos = { x: width/2 - 10, y: height - 70 }; // Zyro a la derecha de otroAlien
 	zyro.image = zyroIdleLeft; // Viendo hacia la izquierda
 	zyro.scale = 0.7;
 	zyro.visible = true;
 	
-	otroAlien.pos = { x: width/2 - 30, y: height - 70 }; // otroAlien adelante (más abajo)
-	otroAlien.image = "assets/otroAlien.png";
-	otroAlien.scale = 0.7;
-	otroAlien.visible = true;
+	// Crear guardia masculino más a la derecha (misma distancia que entre otroAlien y Zyro)
+	if (agenteSecreto) agenteSecreto.remove();
+	agenteSecreto = new Sprite(width/2 + 70, height - 70, 's');
+	agenteSecreto.w = 100;
+	agenteSecreto.h = 150;
+	if (guardHomImg) {
+		agenteSecreto.image = guardHomImg;
+		agenteSecreto.scale = 0.5;
+	} else {
+		agenteSecreto.color = color(0, 0, 0);
+	}
+	agenteSecreto.rotationLock = true;
 	
-	// Crear guías a la izquierda
+	// Crear guías más juntos a la izquierda
 	if (nivelUnoGuide) nivelUnoGuide.remove();
-	nivelUnoGuide = new Sprite(200, height - 80, 60, 150, 's');
+	nivelUnoGuide = new Sprite(200, height - 70, 60, 150, 's');
 	if (tourguideLeftImg) {
 		nivelUnoGuide.image = tourguideLeftImg;
 	}
 	nivelUnoGuide.scale = 0.22;
 	
 	if (nivelDosGuide) nivelDosGuide.remove();
-	nivelDosGuide = new Sprite(350, height - 80, 60, 150, 's');
+	nivelDosGuide = new Sprite(280, height - 70, 60, 150, 's'); // Más a la derecha, cerca del hombre
 	if (guiaFemImg) {
 		nivelDosGuide.image = guiaFemImg;
 	}
@@ -2462,16 +2550,6 @@ function runInteriorPalacio() {
 	}
 }
 
-function crearAgenteSecreto() {
-	// Crear sprite del agente detrás de otroAlien
-	if (agenteSecreto) agenteSecreto.remove();
-	agenteSecreto = new Sprite(otroAlien.pos.x + 80, height - 100, 's');
-	agenteSecreto.w = 200;
-	agenteSecreto.h = 100;
-	agenteSecreto.color = color(0, 0, 0); // Negro para servicio secreto
-	agenteSecreto.rotationLock = true;
-}
-
 function startOficinaPresidencial() {
 	nivelTresPhase = 3;
 	nivelTresDialogIndex = 0;
@@ -2490,21 +2568,23 @@ function startOficinaPresidencial() {
 		otroAlien.pos = { x: -5000, y: -5000 }; // Esconderlo
 	}
 	
-	// Posicionar a Zyro en el centro de la oficina
-	zyro.pos = { x: width/2, y: height - 140 };
+	// Posicionar a Zyro en el centro al borde inferior
+	zyro.pos = { x: width/2, y: height - 70 };
 	zyro.image = zyroIdle;
+	zyro.scale = 0.7;
 	
-	// Actualizar segundo agente con imagen
+	// Guardia masculino a la izquierda bloqueando la salida
 	if (agenteSecreto) {
-		agenteSecreto.pos = { x: width/2 - 150, y: height - 120 };
+		agenteSecreto.pos = { x: width/2 - 150, y: height - 70 };
 		if (guardHomImg) {
 			agenteSecreto.image = guardHomImg;
-			agenteSecreto.scale = 0.7;
+			agenteSecreto.scale = 0.6;
 			agenteSecreto.w = 100;
 			agenteSecreto.h = 150;
 		} else {
-			agenteSecreto.color = color(101, 67, 33); // Fallback café/brown
+			agenteSecreto.color = color(0, 0, 0);
 		}
+		agenteSecreto.visible = true;
 	}
 	
 	// Diálogo inicial de confrontación
@@ -2528,6 +2608,7 @@ function runOficinaPresidencial() {
 	if (agenteSecreto) agenteSecreto.draw();
 	if (zyro) zyro.draw();
 	if (alipresi) alipresi.draw();
+	if (agenteFem) agenteFem.draw();
 	
 	// Mostrar diálogo
 	if (nivelTresDialogActive) {
@@ -2587,18 +2668,31 @@ function runOficinaPresidencial() {
 }
 
 function crearAlipresi() {
-	// Crear sprite del presidente alienígena
+	// Crear sprite del presidente alienígena al borde inferior
 	if (alipresi) alipresi.remove();
-	alipresi = new Sprite(width/2 + 200, height - 120, 's');
+	alipresi = new Sprite(width/2 + 150, height - 70, 's');
 	alipresi.w = 100;
 	alipresi.h = 150;
 	if (alienMaloImg) {
 		alipresi.image = alienMaloImg;
-		alipresi.scale = 0.7; // Ajustar escala según sea necesario
+		alipresi.scale = 0.6;
 	} else {
 		alipresi.color = color(255, 0, 0); // Fallback rojo
 	}
 	alipresi.rotationLock = true;
+	
+	// Crear guardia femenina a la derecha del presidente
+	if (agenteFem) agenteFem.remove();
+	agenteFem = new Sprite(width/2 + 280, height - 70, 's');
+	agenteFem.w = 100;
+	agenteFem.h = 150;
+	if (guardFemImg) {
+		agenteFem.image = guardFemImg;
+		agenteFem.scale = 0.6;
+	} else {
+		agenteFem.color = color(0, 0, 0);
+	}
+	agenteFem.rotationLock = true;
 }
 
 function runPongInterRoundDialog() {
@@ -2637,24 +2731,14 @@ function runPongInterRoundDialog() {
 					pongRound++;
 					pongScoreZyro = 0;
 					pongScoreEnemy = 0;
-					
-					// Ajustar puntaje objetivo según la ronda
-					if (pongRound === 2) {
-						pongTarget = 4; // Segunda ronda a 4 puntos
-					} else if (pongRound === 3) {
-						pongTarget = 3; // Tercera ronda a 3 puntos
-					}
+					pongQuestionsAnswered = 0; // Resetear contador de preguntas
 					
 					createEnemyPaddle();
 					resetPongBall();
 					
 					// Resetear temporizadores para nueva ronda
-					pongGameTimer = 0;
-					pongQuestionTriggered = false;
+					pongTennisBallTimer = 0;
 					pongQuestionActive = false;
-					pongStunnedZyro = false;
-					pongStunnedEnemy = false;
-					pongStunTimer = 0;
 				}
 			}
 		}
@@ -2666,19 +2750,19 @@ function startPongGame() {
 	pongRound = 1;
 	pongScoreZyro = 0;
 	pongScoreEnemy = 0;
-	pongLives = 3;
-	pongTarget = 5; // Primera ronda a 5 puntos
+	pongQuestionsAnswered = 0;
+	pongLives = 5; // 5 vidas para TODO el minijuego
 	pongInterRoundDialog = false;
-	pongGameTimer = 0; // Resetear temporizador de juego
-	pongQuestionTriggered = false; // No se ha activado pregunta
+	pongTennisBallTimer = 0;
 	pongQuestionActive = false;
-	pongStunnedZyro = false;
-	pongStunnedEnemy = false;
-	pongStunTimer = 0;
+	questionsAsked = []; // Resetear preguntas usadas
 	
 	// Limpiar sprites de la oficina
 	if (agenteSecreto) {
 		agenteSecreto.pos = { x: -5000, y: -5000 };
+	}
+	if (agenteFem) {
+		agenteFem.pos = { x: -5000, y: -5000 };
 	}
 	if (alipresi) {
 		alipresi.pos = { x: -5000, y: -5000 };
@@ -2712,15 +2796,20 @@ function startPongGame() {
 	guardHomSprite.rotationLock = true;
 	guardHomSprite.visible = (pongRound >= 3); // Visible solo en ronda 3
 	
-	// Crear pelota de pong (roja)
+	// Crear pelota de pong (roja, más rápida)
 	if (pongBall) pongBall.remove();
 	pongBall = new Sprite(width/2, height/2, 15, 'd');
 	pongBall.diameter = 15;
 	pongBall.color = color(255, 0, 0); // Roja
-	pongBall.bounciness = 1;
+	pongBall.bounciness = 0; // Sin rebote automático, usaremos colisiones manuales
 	pongBall.friction = 0;
-	pongBall.vel = { x: 4, y: 3 };
+	let angle = random([-1, 1]) * random(0.3, 0.8);
+	let dirX = random([-1, 1]);
+	pongBall.vel = { x: dirX * pongBallSpeed * cos(angle), y: pongBallSpeed * sin(angle) };
 	pongBall.rotationLock = true;
+	pongBall.mass = 1;
+	// Desactivar gravedad para la pelota
+	world.gravity.y = 0;
 	
 	// Crear paddle de Zyro (lima verde, lado izquierdo)
 	if (pongPaddleZyro) pongPaddleZyro.remove();
@@ -2739,23 +2828,18 @@ function createEnemyPaddle() {
 	if (pongRound === 1) {
 		// Primera ronda - guardia femenina (paleta negra)
 		pongPaddleEnemy.color = color(0, 0, 0);
-		// Mostrar guardia femenina en el fondo
-		if (guardFemSprite) guardFemSprite.visible = false; // No mostrar en ronda 1
-		if (guardHomSprite) guardHomSprite.visible = false; // No mostrar en ronda 1
+		// No mostrar guardias en el fondo en ronda 1
+		if (guardFemSprite) guardFemSprite.visible = false;
+		if (guardHomSprite) guardHomSprite.visible = false;
 	} else if (pongRound === 2) {
 		// Segunda ronda - guardia masculino (paleta negra)
 		pongPaddleEnemy.color = color(0, 0, 0);
 		// Mostrar guardia femenina en el fondo (ya fue derrotada)
 		if (guardFemSprite) guardFemSprite.visible = true;
-		if (guardHomSprite) guardHomSprite.visible = false; // No mostrar aún
+		if (guardHomSprite) guardHomSprite.visible = false;
 	} else if (pongRound === 3) {
-		// Tercera ronda - presidente (con imagen)
-		if (alienMaloImg) {
-			pongPaddleEnemy.image = alienMaloImg;
-			pongPaddleEnemy.scale = 0.15;
-		} else {
-			pongPaddleEnemy.color = color(255, 0, 0); // Fallback rojo
-		}
+		// Tercera ronda - presidente (paleta ROJA)
+		pongPaddleEnemy.color = color(255, 0, 0); // Roja
 		// Mostrar ambos guardias en el fondo (ambos derrotados)
 		if (guardFemSprite) guardFemSprite.visible = true;
 		if (guardHomSprite) guardHomSprite.visible = true;
@@ -2764,11 +2848,40 @@ function createEnemyPaddle() {
 }
 
 function selectPongQuestion() {
-	// Seleccionar pregunta según el nivel/ronda
+	// Sistema de preguntas sin repetición usando índice secuencial
 	let availableQuestions = ejecutivoQuestions.filter(q => q.level === pongRound);
+	
 	if (availableQuestions.length > 0) {
-		pongCurrentQuestion = random(availableQuestions);
+		// Verificar si ya se usaron todas las preguntas de este nivel
+		let usedCount = questionsAsked.filter(idx => {
+			return ejecutivoQuestions[idx] && ejecutivoQuestions[idx].level === pongRound;
+		}).length;
+		
+		if (usedCount >= availableQuestions.length) {
+			// Ya se usaron todas, resetear solo para este nivel
+			questionsAsked = questionsAsked.filter(idx => {
+				return ejecutivoQuestions[idx] && ejecutivoQuestions[idx].level !== pongRound;
+			});
+		}
+		
+		// Buscar una pregunta no usada de este nivel
+		let unusedQuestions = [];
+		for (let i = 0; i < ejecutivoQuestions.length; i++) {
+			if (ejecutivoQuestions[i].level === pongRound && !questionsAsked.includes(i)) {
+				unusedQuestions.push({question: ejecutivoQuestions[i], index: i});
+			}
+		}
+		
+		if (unusedQuestions.length > 0) {
+			let selected = random(unusedQuestions);
+			pongCurrentQuestion = selected.question;
+			questionsAsked.push(selected.index);
+		} else {
+			// Fallback: tomar cualquiera del nivel
+			pongCurrentQuestion = random(availableQuestions);
+		}
 	} else {
+		// No hay preguntas específicas para este nivel, usar cualquiera
 		pongCurrentQuestion = random(ejecutivoQuestions);
 	}
 }
@@ -2796,15 +2909,16 @@ function runPongGame() {
 	
 	// Dibujar sprites del juego
 	if (pongBall) pongBall.draw();
+	if (pongTennisBall) pongTennisBall.draw();
 	if (pongPaddleZyro) pongPaddleZyro.draw();
 	if (pongPaddleEnemy) pongPaddleEnemy.draw();
 	
-	// Sistema de preguntas con timer
+	// Sistema de preguntas
 	if (pongQuestionActive) {
-		// MODO PREGUNTA: Pausar pelota, contar tiempo de respuesta
+		// MODO PREGUNTA: Mostrar pregunta con temporizador
 		pongTimer -= deltaTime / 1000;
 		
-		// Mostrar timer de pregunta
+		// Mostrar timer
 		push();
 		fill(255);
 		uiText(40);
@@ -2838,23 +2952,21 @@ function runPongGame() {
 		
 		// Si se acabó el tiempo, respuesta incorrecta automática
 		if (pongTimer <= 0) {
-			handleWrongAnswer();
+			handleWrongPongAnswer();
 		}
 	} else {
-		// MODO JUEGO: Temporizador que cuenta hacia arriba
-		pongGameTimer += deltaTime / 1000;
+		// MODO JUEGO: pong normal
 		
-		// Actualizar temporizador de atontamiento
-		if (pongStunnedZyro || pongStunnedEnemy) {
-			pongStunTimer -= deltaTime / 1000;
-			if (pongStunTimer <= 0) {
-				pongStunnedZyro = false;
-				pongStunnedEnemy = false;
-			}
+		// Incrementar timer para pelota de tenis
+		pongTennisBallTimer += deltaTime / 1000;
+		
+		// Crear pelota de tenis cada 15 segundos
+		if (pongTennisBallTimer >= 15 && !pongTennisBall && pongQuestionsAnswered < pongQuestionsPerRound) {
+			createTennisBall();
 		}
 		
-		// Control del paddle de Zyro (si no está stunned)
-		if (!pongStunnedZyro && pongPaddleZyro) {
+		// Control del paddle de Zyro
+		if (pongPaddleZyro) {
 			if (keyIsDown(UP_ARROW) && pongPaddleZyro.y > 50) {
 				pongPaddleZyro.y -= 6;
 			}
@@ -2863,8 +2975,8 @@ function runPongGame() {
 			}
 		}
 		
-		// IA simple del enemigo (si no está stunned)
-		if (!pongStunnedEnemy && pongPaddleEnemy && pongBall) {
+		// IA simple del enemigo
+		if (pongPaddleEnemy && pongBall) {
 			if (pongBall.y < pongPaddleEnemy.y - 10) {
 				pongPaddleEnemy.y -= 4;
 			} else if (pongBall.y > pongPaddleEnemy.y + 10) {
@@ -2872,46 +2984,55 @@ function runPongGame() {
 			}
 		}
 		
-		// Rebote en techo y piso
+		// Física de la pelota
 		if (pongBall) {
+			// Rebote en techo y piso
 			if (pongBall.y < 10 || pongBall.y > height - 10) {
 				pongBall.vel.y *= -1;
+				if (pongBall.y < 10) pongBall.y = 10;
+				if (pongBall.y > height - 10) pongBall.y = height - 10;
 			}
 			
 			// Rebote en paddles
 			if (pongBall.collides(pongPaddleZyro)) {
-				pongBall.vel.x = abs(pongBall.vel.x);
 				let offset = (pongBall.y - pongPaddleZyro.y) / 50;
+				pongBall.vel.x = abs(pongBall.vel.x);
 				pongBall.vel.y = offset * 5;
+				pongBall.x = pongPaddleZyro.x + pongPaddleZyro.width/2 + pongBall.width/2 + 2;
 			}
 			if (pongBall.collides(pongPaddleEnemy)) {
-				pongBall.vel.x = -abs(pongBall.vel.x);
 				let offset = (pongBall.y - pongPaddleEnemy.y) / 50;
+				pongBall.vel.x = -abs(pongBall.vel.x);
 				pongBall.vel.y = offset * 5;
+				pongBall.x = pongPaddleEnemy.x - pongPaddleEnemy.width/2 - pongBall.width/2 - 2;
+			}
+			
+			// Colisión con pelota de tenis
+			if (pongTennisBall && pongBall.collides(pongTennisBall)) {
+				// Activar pregunta
+				pongQuestionActive = true;
+				pongTimer = pongTimerMax;
+				selectPongQuestion();
+				// Pausar pelota de pong
+				pongBall.vel.x = 0;
+				pongBall.vel.y = 0;
+				// Eliminar pelota de tenis
+				if (pongTennisBall) {
+					pongTennisBall.remove();
+					pongTennisBall = null;
+				}
 			}
 			
 			// Detectar goles
 			if (pongBall.x < 0) {
-				// Gol del enemigo
+				// Gol del enemigo - punto para enemigo
 				pongScoreEnemy++;
+				pongLives--; // Siempre pierde vida cuando le anotan
 				resetPongBall();
 			} else if (pongBall.x > width) {
-				// Gol de Zyro
+				// Gol de Zyro - punto para Zyro
 				pongScoreZyro++;
 				resetPongBall();
-			}
-		}
-		
-		// Activar pregunta cada 10 segundos
-		if (pongGameTimer >= 10 && !pongQuestionTriggered) {
-			pongQuestionTriggered = true;
-			pongQuestionActive = true;
-			pongTimer = pongTimerMax;
-			selectPongQuestion();
-			// Pausar pelota
-			if (pongBall) {
-				pongBall.vel.x = 0;
-				pongBall.vel.y = 0;
 			}
 		}
 	}
@@ -2932,29 +3053,27 @@ function runPongGame() {
 	text('Vidas: ' + pongLives, 20, 40);
 	pop();
 	
-	// Mostrar temporizador de juego (cuando no hay pregunta)
-	if (!pongQuestionActive) {
-		push();
-		fill(255, 255, 0);
-		uiText(16);
-		textAlign(RIGHT);
-		text('Tiempo: ' + Math.floor(pongGameTimer) + 's', width - 20, 40);
-		pop();
-	}
+	// Mostrar preguntas respondidas en esta ronda
+	push();
+	fill(255, 255, 0);
+	uiText(16);
+	textAlign(RIGHT);
+	text('Preguntas: ' + pongQuestionsAnswered + '/' + pongQuestionsPerRound, width - 20, 40);
+	pop();
 	
 	// Verificar victoria o derrota
-	if (pongScoreEnemy >= pongTarget || pongLives <= 0) {
-		// Zyro pierde
+	if (pongLives <= 0) {
+		// Zyro pierde - se acabaron las vidas
 		nivelTresPhase = 98; // Estado de derrota
-	} else if (pongScoreZyro >= pongTarget) {
-		// Zyro gana esta ronda
+	} else if (pongQuestionsAnswered >= pongQuestionsPerRound) {
+		// Completó las 5 preguntas de esta ronda
 		if (pongRound < 3) {
 			// Mostrar diálogo entre rondas
 			pongInterRoundDialog = true;
 			pongInterRoundIndex = 0;
 			
 			if (pongRound === 1) {
-				// Diálogo después de derrotar al primer agente
+				// Diálogo después de derrotar a la guardia femenina
 				pongInterRoundMessages = [
 					{ who: 'alipresi', text: '¿En serio? ¡Te está haciendo pedazos un alien!' },
 					{ who: 'alipresi', text: 'Imagínate lo que un marciano como yo podría hacerte.' },
@@ -2963,7 +3082,7 @@ function runPongGame() {
 					{ who: 'alipresi', text: 'Como sea, Luciano, ¡te toca!' }
 				];
 			} else if (pongRound === 2) {
-				// Diálogo después de derrotar al segundo agente
+				// Diálogo después de derrotar al guardia masculino
 				pongInterRoundMessages = [
 					{ who: 'alipresi', text: 'Tampoco tú, Leonardo... ¡Bola de agentes patito!' },
 					{ who: 'alipresi', text: 'Me toca a mí. ¡Yo no te tendré piedad!' }
@@ -2984,48 +3103,66 @@ function runPongGame() {
 function resetPongBall() {
 	if (pongBall) {
 		pongBall.pos = { x: width/2, y: height/2 };
-		pongBall.vel = { x: random([-4, 4]), y: random(-3, 3) };
-		pongStunnedZyro = false;
-		pongStunnedEnemy = false;
-		pongStunTimer = 0;
-		pongGameTimer = 0; // Resetear temporizador de juego
-		pongQuestionTriggered = false; // Permitir nueva pregunta
+		let angle = random([-1, 1]) * random(0.3, 0.8);
+		let dirX = random([-1, 1]);
+		pongBall.vel = { x: dirX * pongBallSpeed * cos(angle), y: pongBallSpeed * sin(angle) };
+	}
+	// Resetear timer de pelota de tenis
+	pongTennisBallTimer = 0;
+	// Eliminar pelota de tenis si existe
+	if (pongTennisBall) {
+		pongTennisBall.remove();
+		pongTennisBall = null;
 	}
 }
 
-function handleCorrectAnswer() {
-	// Enemigo stunned por 3 segundos
-	pongStunnedEnemy = true;
-	pongStunTimer = 3;
+function handleCorrectPongAnswer() {
+	// Punto para Zyro
+	pongScoreZyro++;
+	pongQuestionsAnswered++;
 	pongQuestionActive = false;
 	pongCurrentQuestion = null;
 	
-	// Relanzar pelota hacia el enemigo
+	// Resetear timer de pelota de tenis
+	pongTennisBallTimer = 0;
+	
+	// Relanzar pelota hacia Zyro (respuesta correcta)
 	if (pongBall) {
-		pongBall.vel = { x: 4, y: random(-3, 3) };
+		pongBall.pos = { x: width/2, y: height/2 };
+		pongBall.vel = { x: -pongBallSpeed, y: random(-3, 3) }; // Hacia Zyro (izquierda)
 	}
-	
-	// Resetear temporizadores
-	pongGameTimer = 0;
-	pongQuestionTriggered = false;
 }
 
-function handleWrongAnswer() {
-	// Zyro stunned por 3 segundos y pierde una vida
-	pongStunnedZyro = true;
-	pongStunTimer = 3;
-	pongQuestionActive = false;
-	pongCurrentQuestion = null;
+function handleWrongPongAnswer() {
+	// Punto para enemigo y pierde vida
+	pongScoreEnemy++;
 	pongLives--;
+	pongQuestionsAnswered++;
+	pongQuestionActive = false;
+	pongCurrentQuestion = null;
 	
-	// Relanzar pelota hacia Zyro
+	// Resetear timer de pelota de tenis
+	pongTennisBallTimer = 0;
+	
+	// Relanzar pelota hacia el enemigo (respuesta incorrecta)
 	if (pongBall) {
-		pongBall.vel = { x: -4, y: random(-3, 3) };
+		pongBall.pos = { x: width/2, y: height/2 };
+		pongBall.vel = { x: pongBallSpeed, y: random(-3, 3) }; // Hacia enemigo (derecha)
 	}
-	
-	// Resetear temporizadores
-	pongGameTimer = 0;
-	pongQuestionTriggered = false;
+}
+
+function createTennisBall() {
+	// Crear pelota de tenis (círculo amarillo con ?)
+	if (pongTennisBall) pongTennisBall.remove();
+	pongTennisBall = new Sprite(random(width * 0.3, width * 0.7), random(height * 0.3, height * 0.7), 40, 's');
+	pongTennisBall.diameter = 40;
+	pongTennisBall.color = color(255, 255, 0); // Amarillo
+	pongTennisBall.stroke = color(0);
+	pongTennisBall.strokeWeight = 3;
+	pongTennisBall.text = '?';
+	pongTennisBall.textSize = 24;
+	pongTennisBall.textColor = color(0);
+	pongTennisBall.rotationLock = true;
 }
 
 function displayNivel3WinScreen() {
@@ -3058,10 +3195,12 @@ function displayNivel3WinScreen() {
 	
 	fill(255, 255, 0);
 	uiText(18);
-	text('Presiona R para volver al jardín', width/2, height - 80);
+	text('Presiona ENTER para volver al jardín', width/2, height - 80);
 	pop();
 	
-	if (keyIsDown(82)) { // R key
+	let enterDown = keyIsDown(ENTER);
+	let enterPressed = enterDown && !prevEnterDown;
+	if (enterPressed) {
 		levelThreeCompleted = true; // Marcar nivel 3 como completado
 		if (!completedLevels.includes(2)) completedLevels.push(2);
 		cleanupPong();
@@ -3084,15 +3223,8 @@ function displayNivel3LoseScreen() {
 	
 	uiText(20);
 	fill(255, 255, 0);
-	text('Presiona R para volver al jardín', width/2, height/2 + 60);
-	text('Presiona ENTER para reintentar', width/2, height/2 + 100);
+	text('Presiona ENTER para reintentar', width/2, height/2 + 60);
 	pop();
-	
-	if (keyIsDown(82)) { // R key
-		cleanupPong();
-		returnToGarden();
-		showReturnDialog = true;
-	}
 	
 	let enterDown = keyIsDown(ENTER);
 	let enterPressed = enterDown && !prevEnterDown;
@@ -3107,6 +3239,10 @@ function cleanupPong() {
 	if (pongBall && !pongBall.removed) {
 		pongBall.remove();
 		pongBall = null;
+	}
+	if (pongTennisBall && !pongTennisBall.removed) {
+		pongTennisBall.remove();
+		pongTennisBall = null;
 	}
 	if (pongPaddleZyro && !pongPaddleZyro.removed) {
 		pongPaddleZyro.remove();
@@ -3128,7 +3264,8 @@ function cleanupPong() {
 	pongCurrentQuestion = null;
 	pongScoreZyro = 0;
 	pongScoreEnemy = 0;
-	pongLives = 3;
+	pongQuestionsAnswered = 0;
+	pongLives = 5;
 	pongRound = 1;
 }
 
@@ -3324,10 +3461,25 @@ function keyPressed(){
 		
 		if (answer >= 0 && answer < 4) {
 			if (answer === pongCurrentQuestion.correct) {
-				handleCorrectAnswer();
+				handleCorrectPongAnswer();
 			} else {
-				handleWrongAnswer();
+				handleWrongPongAnswer();
 			}
+			return false;
+		}
+	}
+}
+
+function mousePressed() {
+	// Detectar clic en botón "Volver al inicio" en pantalla de créditos
+	if (showCredits) {
+		let buttonX = width/2 - 150;
+		let buttonY = height - 80;
+		let buttonW = 300;
+		let buttonH = 50;
+		
+		if (mouseX > buttonX && mouseX < buttonX + buttonW && mouseY > buttonY && mouseY < buttonY + buttonH) {
+			location.reload(); // Recargar la página
 			return false;
 		}
 	}
